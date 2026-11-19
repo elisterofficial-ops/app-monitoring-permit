@@ -159,12 +159,26 @@ function bindChooser(el, ctx) {
     el.querySelectorAll('[data-imbas]').forEach((b) => { b.disabled = false; });
   };
   langkau.addEventListener('click', () => { if (skip) skip('langkau'); });
+  // Jika telefon menutup app semasa kamera dibuka (memori penuh), app dimuat semula tanpa gambar.
+  // Tanda ini dikesan bila skrin Tambah dibuka semula.
+  const KAMERA = 'amp-kamera';
+  const tanda = (on) => { try { if (on) sessionStorage.setItem(KAMERA, String(Date.now())); else sessionStorage.removeItem(KAMERA); } catch {} };
+  // Tanda tidak dibuang di sini kerana skrin boleh dilukis dua kali semasa app dibuka; ia diganti
+  // bila imbasan seterusnya bermula dan dibuang sebaik gambar diterima.
+  let lama = 0;
+  try { lama = Number(sessionStorage.getItem(KAMERA) || 0); } catch {}
+  if (lama && Date.now() - lama < 15 * 60000) {
+    main.insertAdjacentHTML('beforebegin', `<div class="note warn"><div class="note-t">${I.alert}Gambar tadi tidak sampai ke app</div>
+      <div class="sub">Telefon menutup app semasa kamera dibuka, biasanya kerana memori telefon penuh. Cara lain: ambil gambar dengan kamera telefon dahulu, kemudian tekan "atau pilih gambar dari galeri" di bawah.</div></div>`);
+  }
   el.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-imbas]');
     if (!b || main.disabled) return;
     try {
       await ctx.ensureAuth();
-      const d = await imbasPermit({ capture: b.dataset.imbas === 'kamera', step: show });
+      tanda(true);
+      const d = await imbasPermit({ capture: b.dataset.imbas === 'kamera', step: (t) => { tanda(false); show(t); } });
+      tanda(false);
       if (!d) { reset(); return; }
       // Kiraan saat supaya jelas app masih bekerja; pilihan isi sendiri selepas beberapa saat.
       const tick = () => {
@@ -183,7 +197,8 @@ function bindChooser(el, ctx) {
       if (!el.isConnected) return;
       if (hasil === 'langkau') { ctx.go('#/tambah/imbas'); return; }
       if (d.ralat instanceof AuthError) { reset(); ctx.fail(d.ralat); return; }
-      if (!d.keys.length) toast('Teks tidak dapat dibaca dari gambar. Gambar permit tetap disimpan, sila isi butiran.', 'err');
+      if (d.ralat && (d.ralat.timeout || d.ralat.offline)) toast(`${d.ralat.message} Teks tidak dapat dibaca, sila isi butiran. Gambar akan dicuba simpan.`, 'err');
+      else if (!d.keys.length) toast('Teks tidak dapat dibaca dari gambar. Gambar permit tetap disimpan, sila isi butiran.', 'err');
       if (d.match) {
         const ans = await askMatch(d.match);
         if (!ans) { reset(); return; }

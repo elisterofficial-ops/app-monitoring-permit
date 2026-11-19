@@ -116,13 +116,30 @@ export async function shareFile(blob, filename, text = '') {
   return 'downloaded';
 }
 
+// Pemilih gambar. Input dilekatkan pada halaman dan dirujuk dari luar: input yang terapung boleh dibuang
+// oleh telefon semasa kamera terbuka, lalu gambar yang diambil tidak sampai ke app.
+let activeInput = null;
 export function pickFile({ capture = true } = {}) {
   return new Promise((resolve) => {
+    if (activeInput) activeInput.remove();
     const inp = document.createElement('input');
     inp.type = 'file';
     inp.accept = 'image/*';
     if (capture) inp.setAttribute('capture', 'environment');
-    inp.addEventListener('change', () => resolve(inp.files && inp.files[0] ? inp.files[0] : null), { once: true });
+    inp.setAttribute('aria-hidden', 'true');
+    inp.tabIndex = -1;
+    inp.style.cssText = 'position:fixed;left:-200px;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(inp);
+    activeInput = inp;
+    let done = false;
+    const finish = (f) => {
+      if (done) return;
+      done = true;
+      setTimeout(() => { inp.remove(); if (activeInput === inp) activeInput = null; }, 0);
+      resolve(f);
+    };
+    inp.addEventListener('change', () => finish(inp.files && inp.files[0] ? inp.files[0] : null));
+    inp.addEventListener('cancel', () => finish(null));
     inp.click();
   });
 }

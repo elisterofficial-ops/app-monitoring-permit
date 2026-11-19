@@ -16,7 +16,16 @@ import profil from './views/profil.js';
 
 const VIEWS = { utama, cari, permit: butiran, tambah: borang, ulang: borang, baharui: borang, sunting: borang, hasil, surat, profil };
 const EDIT_ONLY = new Set(['tambah', 'ulang', 'baharui', 'sunting']);
-const app = document.getElementById('app');
+let app = document.getElementById('app');
+
+// Bekas baru setiap kali skrin dilukis. Skrin memasang pengendali acara pada bekas ini; tanpa bekas baru,
+// pengendali dari skrin lama bertindan (contohnya dua imbasan serentak bila butang Imbas ditekan sekali).
+function freshApp() {
+  const n = app.cloneNode(false);
+  app.replaceWith(n);
+  app = n;
+  return n;
+}
 const nav = document.getElementById('nav');
 const DEMO = ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('demo');
 
@@ -68,11 +77,14 @@ function route(keepScroll = false) {
   const ctx = makeCtx(r);
   const y = window.scrollY;
   try {
-    app.innerHTML = view.render(ctx);
+    const html = view.render(ctx);
+    freshApp();
+    app.innerHTML = html;
     renderNav(view.nav || r.name, view.hideNav);
     if (view.bind) view.bind(app, ctx);
   } catch (e) {
     console.error(e);
+    freshApp();
     app.innerHTML = `<div class="page"><div class="empty"><div class="empty-t">Skrin ini gagal dipaparkan</div><div class="sub">${String(e.message || e)}</div><a class="btn ghost" href="#/utama">Kembali ke Utama</a></div></div>`;
   }
   window.scrollTo(0, keepScroll ? y : 0);
@@ -205,6 +217,7 @@ function showLogin(error = '') {
   started = false;
   nav.hidden = true;
   const needSheet = !state.sheetId;
+  freshApp();
   app.innerHTML = loginView({ needSheet, hasCache: !!state.sheetId && hasCache(), error });
   const err = app.querySelector('#login-err');
   const btn = app.querySelector('#btn-login');

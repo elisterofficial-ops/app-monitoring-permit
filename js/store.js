@@ -677,7 +677,7 @@ export async function compressImage(file, max = 2000, q = 0.86) {
 export async function uploadPhoto(blob, name) {
   if (state.demo) return { id: 'demo', webViewLink: URL.createObjectURL(blob) };
   const parent = await folder('folder gambar', 'APP Monitoring Permit - Gambar');
-  return drive.upload(blob, { name, parents: [parent], mimeType: blob.type || 'image/jpeg' });
+  return drive.upload(blob, { name, parents: [parent], mimeType: blob.type || 'image/jpeg' }, { timeout: 120000 });
 }
 
 // OCR guna Google Drive: gambar ditukar ke Google Doc sementara, teksnya dibaca, kemudian dibuang ke Sampah.
@@ -688,9 +688,9 @@ export async function ocrText(blob, kind = 'permit') {
     return res.ok ? res.text() : '';
   }
   const parent = await folder('folder gambar', 'APP Monitoring Permit - Gambar');
-  const doc = await drive.upload(blob, { name: 'OCR sementara', mimeType: 'application/vnd.google-apps.document', parents: [parent] });
+  const doc = await drive.upload(blob, { name: 'OCR sementara', mimeType: 'application/vnd.google-apps.document', parents: [parent] }, { timeout: 60000 });
   try {
-    return await drive.exportFile(doc.id, 'text/plain');
+    return await drive.exportFile(doc.id, 'text/plain', { timeout: 30000 });
   } finally {
     drive.trash(doc.id).catch(() => {});
   }

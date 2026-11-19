@@ -64,7 +64,8 @@ export function signOut() {
   } catch {}
 }
 
-async function api(url, { method = 'GET', body, query, raw = false } = {}) {
+// timeout (ms): batalkan permintaan yang tersangkut, contohnya muat naik gambar bila internet terputus-putus.
+async function api(url, { method = 'GET', body, query, raw = false, timeout = 0 } = {}) {
   if (!hasToken()) throw new AuthError('Sesi log masuk tamat.');
   if (query) url += (url.includes('?') ? '&' : '?') + new URLSearchParams(query);
   const opts = { method, headers: { Authorization: `Bearer ${token.access_token}` } };
@@ -75,13 +76,23 @@ async function api(url, { method = 'GET', body, query, raw = false } = {}) {
       opts.headers['Content-Type'] = 'application/json';
     }
   }
+  const ctrl = timeout && typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeout) : null;
+  if (ctrl) opts.signal = ctrl.signal;
   let res;
   try {
     res = await fetch(url, opts);
   } catch {
+    if (ctrl && ctrl.signal.aborted) {
+      const e = new Error('Internet terlalu perlahan, permintaan dibatalkan. Cuba lagi.');
+      e.timeout = true;
+      throw e;
+    }
     const e = new Error('Tiada sambungan internet.');
     e.offline = true;
     throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   if (res.status === 401) {
     token = null;
@@ -130,11 +141,11 @@ export const sheets = {
 export const drive = {
   about: () => api(`${DRIVE}/about`, { query: { fields: 'user(displayName,emailAddress,photoLink)' } }),
   file: (id, fields) => api(`${DRIVE}/files/${id}`, { query: { fields, supportsAllDrives: 'true' } }),
-  upload(blob, meta) {
+  upload(blob, meta, { timeout = 0 } = {}) {
     const fd = new FormData();
     fd.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
     fd.append('file', blob);
-    return api(UPLOAD, { method: 'POST', query: { uploadType: 'multipart', fields: 'id,name,webViewLink', supportsAllDrives: 'true' }, body: fd });
+    return api(UPLOAD, { method: 'POST', query: { uploadType: 'multipart', fields: 'id,name,webViewLink', supportsAllDrives: 'true' }, body: fd, timeout });
   },
   createFolder: (name) =>
     api(`${DRIVE}/files`, { method: 'POST', query: { fields: 'id,webViewLink' }, body: { name, mimeType: 'application/vnd.google-apps.folder' } }),
@@ -144,8 +155,8 @@ export const drive = {
       query: { fields: 'id,webViewLink', supportsAllDrives: 'true' },
       body: parent ? { name, parents: [parent] } : { name },
     }),
-  async exportFile(id, mimeType) {
-    const res = await api(`${DRIVE}/files/${id}/export`, { query: { mimeType }, raw: true });
+  async exportFile(id, mimeType, { timeout = 0 } = {}) {
+    const res = await api(`${DRIVE}/files/${id}/export`, { query: { mimeType }, raw: true, timeout });
     return mimeType.startsWith('text/') ? res.text() : res.blob();
   },
   async download(id) {
