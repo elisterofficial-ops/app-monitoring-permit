@@ -171,6 +171,7 @@ function computeDerived(r) {
   const t = today();
   r.baki = r.tamat ? diffDays(t, r.tamat) : null;
   if (state.renewals.has(r.id)) r.status = 'DIPERBAHARUI';
+  else if (r.tempoh === 'SEKALI BAYAR') r.status = 'SAH';
   else if (!r.tamat) r.status = 'TIADA TARIKH';
   else if (r.tempoh === 'BERMUSIM') r.status = r.baki >= 0 ? 'SAH' : 'SELESAI';
   else if (r.baki < 0) r.status = 'TAMAT';
@@ -426,9 +427,15 @@ export const shortName = (nama) =>
 export function anggaran(f) {
   const info = jenisInfo(f.jenis) || {};
   const bermusim = f.tempoh === 'BERMUSIM';
-  const asas = bermusim ? 'SEHARI' : info.asasKadar || '';
+  const sekali = f.tempoh === 'SEKALI BAYAR';
+  const asas = bermusim ? 'SEHARI' : sekali ? 'SEKALI' : info.asasKadar || '';
   const kadar = f.kadarKhas || (bermusim ? info.kadarHarian : info.kadarStandard) || 0;
-  if (!kadar || !f.mula || !f.tamat || f.tamat < f.mula) return null;
+  if (!kadar) return null;
+  if (sekali) {
+    const q = f.kuantiti || 1;
+    return { total: q * kadar, ket: `${q} ${info.unitKuantiti || 'unit'} × RM${kadar}, sekali bayar` };
+  }
+  if (!f.mula || !f.tamat || f.tamat < f.mula) return null;
   const hari = diffDays(f.mula, f.tamat) + 1;
   const bulan = Math.round(hari / 30.4375);
   const qty = f.kuantiti || 1;

@@ -1,5 +1,5 @@
 import { I } from '../icons.js';
-import { esc, fmtDate, fmtLong, fmtRM, dayName, today, diffDays, scase, tcase, waNumber, mapsUrl, BULAN } from '../util.js';
+import { esc, fmtDate, fmtLong, fmtRM, dayName, today, diffDays, scase, tcase, waNumber, mapsUrl, BULAN, tempohLabel } from '../util.js';
 import { state, chain, canEdit, updateRecord, missingForSurat, suratFor, uploadPhoto, compressImage } from '../store.js';
 import { header, badge, empty, toast, busy, pickFile, getLocation } from '../ui.js';
 import { scanPermit, confirmNumber } from './scan.js';
@@ -9,11 +9,11 @@ const clsOf = (s) => ({ 'SAH': 'ok', 'AKAN TAMAT': 'warn', 'TAMAT': 'bad' }[s] |
 
 function waText(r) {
   const lines = [
-    `*${scase(r.jenis)}* · ${r.tempoh === 'BERMUSIM' ? 'Bermusim' : 'Tahunan'}`,
+    `*${scase(r.jenis)}* · ${tempohLabel(r.tempoh)}`,
     r.nama,
     `ID rekod: ${r.id}${r.noPermit ? ` · No. permit: ${r.noPermit}` : ''}`,
     r.kawasan ? `Kawasan: ${tcase(r.kawasan)}${r.kedudukan ? `, ${r.kedudukan}` : ''}` : '',
-    r.mula && r.tamat ? `Tempoh: ${fmtDate(r.mula)} hingga ${fmtDate(r.tamat)}` : '',
+    r.mula && r.tamat ? `Tempoh: ${fmtDate(r.mula)} hingga ${fmtDate(r.tamat)}` : r.mula && r.tempoh === 'SEKALI BAYAR' ? `Sekali bayar sejak ${fmtDate(r.mula)}, tiada tarikh tamat` : '',
     `Status: ${r.status}${r.baki != null && r.baki >= 0 && (r.status === 'SAH' || r.status === 'AKAN TAMAT') ? ` (${r.baki} hari lagi)` : ''}`,
     r.koordinat ? `Lokasi: ${mapsUrl(r.koordinat)}` : '',
   ];
@@ -29,7 +29,9 @@ function hero(r) {
   const col = COLOR[cls];
   let big = '';
   let line = '';
-  if (r.status === 'SAH' || r.status === 'AKAN TAMAT') {
+  if (r.tempoh === 'SEKALI BAYAR' && r.status === 'SAH') {
+    line = `Sekali bayar${r.mula ? ` pada ${esc(fmtLong(r.mula))}` : ''} · tiada tarikh tamat`;
+  } else if (r.status === 'SAH' || r.status === 'AKAN TAMAT') {
     big = String(r.baki);
     line = `hari lagi · tamat ${dayName(r.tamat)}, ${fmtLong(r.tamat)}`;
   } else if (r.status === 'TAMAT') {
@@ -55,7 +57,7 @@ function hero(r) {
   return `<section class="phero ${cls}">
     <div class="phero-top">
       <div><div class="phero-name">${esc(r.nama)}</div>
-        <div class="tags"><span class="tag">${esc(scase(r.jenis))}</span><span class="tag">${r.tempoh === 'BERMUSIM' ? 'Bermusim' : 'Tahunan'}</span></div></div>
+        <div class="tags"><span class="tag">${esc(scase(r.jenis))}</span><span class="tag">${tempohLabel(r.tempoh)}</span></div></div>
       ${badge(r.status)}
     </div>
     ${big ? `<div class="phero-big"><span class="num" style="color:${col}">${big}</span><span>${esc(line)}</span></div>` : `<div class="sub">${line}</div>`}
@@ -77,7 +79,7 @@ export default {
       : '<span class="muted">Belum diisi</span>';
     const jumlah = r.jumlah != null ? `<b class="mono">${esc(fmtRM(r.jumlah))}</b>` : `<span class="muted">Kadar ${esc(scase(r.jenis))} belum ditetapkan</span>`;
     const actions = [];
-    if (edit) actions.push(`<a class="act primary" href="#/baharui/${encodeURIComponent(r.id)}">${I.renew}Baharui</a>`);
+    if (edit && r.tempoh !== 'SEKALI BAYAR') actions.push(`<a class="act primary" href="#/baharui/${encodeURIComponent(r.id)}">${I.renew}Baharui</a>`);
     if (r.tempoh === 'TAHUNAN') actions.push(`<a class="act violet" href="#/surat?id=${encodeURIComponent(r.id)}">${I.mail}Surat</a>`);
     actions.push(`<a class="act green" href="https://wa.me/${waNumber(r.telefon)}?text=${encodeURIComponent(waText(r))}" target="_blank" rel="noopener">${I.wa}WhatsApp</a>`);
     if (r.koordinat) actions.push(`<a class="act" href="${esc(mapsUrl(r.koordinat))}" target="_blank" rel="noopener">${I.pin}Peta</a>`);

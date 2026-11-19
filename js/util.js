@@ -108,6 +108,11 @@ export const STATUS = {
 
 export const statusCls = (s) => (STATUS[s] ? STATUS[s].cls : 'mute');
 
+// Jenis tempoh. SEKALI BAYAR: bayaran sekali tanpa tarikh tamat (contoh papan tanda ONE OFF).
+export const SEKALI = 'SEKALI BAYAR';
+export const TEMPOH = { TAHUNAN: 'Tahunan', BERMUSIM: 'Bermusim', [SEKALI]: 'Sekali bayar' };
+export const tempohLabel = (t) => TEMPOH[t] || 'Tahunan';
+
 export function debounce(fn, ms) {
   let t;
   return (...a) => {

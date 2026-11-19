@@ -289,7 +289,7 @@ button { font: inherit; color: inherit; }
 }
 .vbanner b { color: var(--text); }
 .vbanner a { color: var(--violet); font-weight: 600; }
-.seg { padding: 4px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.seg { padding: 4px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }
 .seg button { height: 44px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .seg button[aria-checked="true"] { background: var(--cyan); color: #04131a; font-weight: 700; box-shadow: 0 0 16px rgba(34, 211, 238, .4); }
 .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

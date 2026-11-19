@@ -1,7 +1,7 @@
 // Borang tambah, ulang, baharui dan sunting permit.
 import { I } from '../icons.js';
 import {
-  esc, fmtDate, fmtRM, isoDate, fromIso, today, addDays, diffDays, numOrNull, tcase, scase, norm, debounce,
+  esc, fmtDate, fmtRM, isoDate, fromIso, today, addDays, diffDays, numOrNull, tcase, scase, norm, debounce, SEKALI, TEMPOH,
 } from '../util.js';
 import {
   state, jenisInfo, anggaran, addRecord, updateRecord, frequent, shortName, addMonths, INPUT_KEYS,
@@ -36,6 +36,7 @@ function fromRecord(r, mode) {
     f.mula = today();
     f.tamat = addDays(f.mula, len);
   }
+  if (f.tempoh === SEKALI) f.tamat = null;
   return f;
 }
 
@@ -97,8 +98,7 @@ export default {
       ${header(title, { back: src ? `#/permit/${encodeURIComponent(src.id)}` : '#/utama' })}
       ${banner}
       <div class="seg" role="radiogroup" aria-label="Jenis tempoh">
-        <button type="button" role="radio" data-tempoh="TAHUNAN" aria-checked="${f.tempoh !== 'BERMUSIM'}">Tahunan</button>
-        <button type="button" role="radio" data-tempoh="BERMUSIM" aria-checked="${f.tempoh === 'BERMUSIM'}">Bermusim</button>
+        ${Object.entries(TEMPOH).map(([k, label]) => `<button type="button" role="radio" data-tempoh="${k}" aria-checked="${f.tempoh === k}">${label}</button>`).join('')}
       </div>
       <div class="grid2">
         <div class="fld"><label class="lbl" for="f-jenis">Jenis permit</label><select id="f-jenis" class="inp" data-k="jenis">${opt(jenisList, f.jenis, { fmt: scase })}</select></div>
@@ -115,10 +115,11 @@ export default {
 
       <div class="grid2">
         ${field('mula', 'Tarikh mula', f, { type: 'date' })}
-        <div class="fld"><label class="lbl" for="f-tamat" id="tamat-l">Tarikh tamat</label>
+        <div class="fld" id="tamat-fld"><label class="lbl" for="f-tamat" id="tamat-l">Tarikh tamat</label>
           <input id="f-tamat" class="inp" data-k="tamat" type="date" value="${esc(isoDate(f.tamat))}"></div>
       </div>
-      <div class="chips" aria-label="Tempoh cepat">
+      <p class="sub" id="sekali-note" hidden>Sekali bayar: tiada tarikh tamat dan tiada surat peringatan.</p>
+      <div class="chips" id="per-chips" aria-label="Tempoh cepat">
         <button type="button" class="chip" data-per="1d">1 hari</button>
         <button type="button" class="chip" data-per="7d">1 minggu</button>
         <button type="button" class="chip" data-per="1m">1 bulan</button>
@@ -187,7 +188,11 @@ export default {
     const $ = (s) => el.querySelector(s);
     const refresh = () => {
       const bermusim = f.tempoh === 'BERMUSIM';
+      const sekali = f.tempoh === SEKALI;
       el.querySelectorAll('.extra').forEach((x) => { x.hidden = !bermusim; });
+      $('#tamat-fld').hidden = sekali;
+      $('#per-chips').hidden = sekali;
+      $('#sekali-note').hidden = !sekali;
       el.querySelectorAll('[data-tempoh]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.tempoh === f.tempoh)));
       const info = jenisInfo(f.jenis) || {};
       const lbl = el.querySelector('#st-qty .stepper-l');
@@ -220,7 +225,16 @@ export default {
 
     el.addEventListener('click', async (e) => {
       const tp = e.target.closest('[data-tempoh]');
-      if (tp) { f.tempoh = tp.dataset.tempoh; refresh(); return; }
+      if (tp) {
+        f.tempoh = tp.dataset.tempoh;
+        if (f.tempoh !== SEKALI && !f.tamat) {
+          const start = f.mula || today();
+          f.tamat = f.tempoh === 'TAHUNAN' ? addDays(addMonths(start, 12), -1) : addDays(addMonths(start, 1), -1);
+          $('#f-tamat').value = isoDate(f.tamat);
+        }
+        refresh();
+        return;
+      }
       const st = e.target.closest('[data-step]');
       if (st) {
         const box = st.closest('[data-stepper]');
@@ -294,9 +308,10 @@ export default {
       const errs = [];
       if (!f.jenis) errs.push(['jenis', 'Pilih jenis permit.']);
       if (!String(f.nama || '').trim()) errs.push(['nama', 'Isi nama pemohon atau syarikat.']);
+      const sekali = f.tempoh === SEKALI;
       if (!f.mula) errs.push(['mula', 'Isi tarikh mula.']);
-      if (!f.tamat) errs.push(['tamat', 'Isi tarikh tamat.']);
-      if (f.mula && f.tamat && f.tamat < f.mula) errs.push(['tamat', 'Tarikh tamat lebih awal dari tarikh mula.']);
+      if (!sekali && !f.tamat) errs.push(['tamat', 'Isi tarikh tamat.']);
+      if (!sekali && f.mula && f.tamat && f.tamat < f.mula) errs.push(['tamat', 'Tarikh tamat lebih awal dari tarikh mula.']);
       el.querySelectorAll('.inp.err').forEach((x) => x.classList.remove('err'));
       if (errs.length) {
         errs.forEach(([k]) => { const x = $(`#f-${k}`); if (x) x.classList.add('err'); });
@@ -313,6 +328,7 @@ export default {
         data[k] = v;
       }
       if (data.tempoh !== 'BERMUSIM') { data.k10 = data.k10 || null; data.k20 = data.k20 || null; data.hiburan = data.hiburan || null; }
+      if (sekali) data.tamat = null;
       busy(btn, true, 'Menyimpan…');
       try {
         if (mode === 'sunting') {
