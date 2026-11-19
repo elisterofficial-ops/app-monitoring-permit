@@ -58,6 +58,7 @@ function makeCtx(r) {
     rerender: () => route(true),
     withAuth,
     ensureAuth,
+    readyNow,
     fail,
     reload: () => load(),
     logout,
@@ -177,6 +178,15 @@ function reconnect() {
 async function ensureAuth() {
   if (state.demo || hasToken()) return;
   await reconnect();
+}
+
+// Untuk butang yang membuka kamera atau galeri: iPhone hanya membuka pemilih gambar jika ia dipanggil terus
+// dalam tekanan jari, tanpa menunggu apa-apa dahulu. Pulangkan true jika sesi sah (teruskan serta-merta);
+// jika tidak, minta sambung semula dan pengguna tekan butang itu sekali lagi.
+function readyNow() {
+  if (state.demo || hasToken()) return true;
+  reconnect().then(() => toast('Disambung semula. Tekan butang tadi sekali lagi.', 'ok')).catch(() => {});
+  return false;
 }
 
 async function withAuth(fn) {

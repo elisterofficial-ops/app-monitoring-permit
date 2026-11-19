@@ -175,7 +175,7 @@ function bindChooser(el, ctx) {
     const b = e.target.closest('[data-imbas]');
     if (!b || main.disabled) return;
     try {
-      await ctx.ensureAuth();
+      if (!ctx.readyNow()) return;
       tanda(true);
       const d = await imbasPermit({ capture: b.dataset.imbas === 'kamera', step: (t) => { tanda(false); show(t); } });
       tanda(false);
@@ -532,7 +532,7 @@ export default {
               ${f.permitAsal ? `<a class="btn ghost wide" href="${esc(f.permitAsal)}" target="_blank" rel="noopener">${I.ext}Buka dalam Drive</a>` : ''}
               <button type="button" class="btn ghost wide" data-close>Tutup</button>`);
           } else if (act === 'resit') {
-            await ctx.ensureAuth();
+            if (!ctx.readyNow()) return;
             const got = await imbasResit({ step: (t) => busy(b, true, t) });
             busy(b, false);
             if (!got) return;
@@ -542,7 +542,7 @@ export default {
             refresh();
             toast(`${keys.length} medan bayaran diisi dari resit. Sila semak.`, 'ok');
           } else if (act === 'imbas') {
-            await ctx.ensureAuth();
+            if (!ctx.readyNow()) return;
             const res = await scanPermit(src && mode === 'sunting' ? src.id : f.nama || 'Permit baru');
             if (!res) return;
             f.permitAsal = res.link;
@@ -556,7 +556,7 @@ export default {
             simpanGambar(d);
             watchUpload();
           } else if (act === 'permit' || act === 'gambar') {
-            await ctx.ensureAuth();
+            if (!ctx.readyNow()) return;
             const file = await pickFile();
             if (!file) return;
             busy(b, true, 'Memuat naik…');

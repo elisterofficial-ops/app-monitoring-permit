@@ -147,7 +147,8 @@ export default {
           toast('Lokasi disimpan.', 'ok');
           ctx.rerender();
         } else if (act === 'imbas') {
-          const res = await ctx.withAuth(() => scanPermit(r.id));
+          if (!ctx.readyNow()) return;
+          const res = await scanPermit(r.id);
           if (!res) return;
           const changes = r.permitAsal ? {} : { permitAsal: res.link };
           const num = await confirmNumber(res.candidates);
