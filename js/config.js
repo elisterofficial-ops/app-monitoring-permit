@@ -2,5 +2,5 @@
 export const CONFIG = {
   version: '1.0.0',
   // OAuth Client ID (jenis "Web application") dari Google Cloud Console.
-  clientId: '',
+  clientId: '12881658236-k0log4mg6un1rolte15qq2im75irt3i1.apps.googleusercontent.com',
 };
