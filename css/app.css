@@ -389,6 +389,16 @@ details.more .fld { margin-top: 6px; }
 .paper-sign { margin-top: 6px; }
 .paper mark { background: #fde68a; color: #1b1b1b; padding: 0 4px; border-radius: 3px; }
 
+/* Panduan pasang */
+.install-card { width: 100%; text-align: left; }
+.steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--soft); }
+.steps li { display: flex; gap: 10px; align-items: flex-start; }
+.stepn {
+  flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(34, 211, 238, .5); color: var(--cyan);
+  font-family: var(--font-h); font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center;
+}
+.install-card .hint { margin: 0; }
+
 /* Profil */
 .prof { flex-direction: row; align-items: center; gap: 14px; }
 .prof .pill { display: inline-block; margin-top: 6px; }

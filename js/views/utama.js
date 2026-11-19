@@ -2,6 +2,7 @@ import { I } from '../icons.js';
 import { esc, fmtRM, fmtLong, fmtShort, today, greet, scase, tcase, timeAgo, dayName } from '../util.js';
 import { state, counts, perhatian, hasil, suratDue, suratUpcoming, canEdit } from '../store.js';
 import { initials } from '../ui.js';
+import { isStandalone, isIOS, isAndroid } from '../install.js';
 
 function donut(c) {
   const total = c.SAH + c['AKAN TAMAT'] + c.TAMAT;
@@ -25,9 +26,12 @@ function donut(c) {
 function installBanner() {
   let x = false;
   try { x = !!localStorage.getItem('amp-install-x'); } catch {}
-  if (!window.__ampInstall || x) return '';
+  if (x || isStandalone() || !(window.__ampInstall || isIOS || isAndroid)) return '';
+  const action = window.__ampInstall
+    ? '<button type="button" class="btn primary sm" data-install>Pasang</button>'
+    : '<a class="btn primary sm" href="#/profil">Cara pasang</a>';
   return `<div class="install-b">${I.install}<div class="grow">Pasang app di skrin utama telefon.</div>
-    <button type="button" class="btn primary sm" data-install>Pasang</button>
+    ${action}
     <button type="button" class="icon-x" data-install-x aria-label="Tutup cadangan pasang">${I.x}</button></div>`;
 }
 

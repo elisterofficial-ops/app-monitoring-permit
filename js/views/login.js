@@ -1,5 +1,6 @@
 import { I } from '../icons.js';
 import { esc } from '../util.js';
+import { installCard } from '../install.js';
 
 export function loginView({ needSheet, hasCache, error = '' }) {
   return `<div class="login">
@@ -12,6 +13,7 @@ export function loginView({ needSheet, hasCache, error = '' }) {
     <button type="button" class="btn google big" id="btn-login">${I.google}<span>Log masuk dengan Google</span></button>
     ${hasCache ? '<button type="button" class="btn ghost wide" id="btn-offline">Lihat data simpanan (luar talian)</button>' : ''}
     <p class="err" id="login-err" role="alert">${esc(error)}</p>
+    ${installCard()}
     <p class="fine">Data permit kekal dalam Google Sheet jabatan. App ini membaca dan menulis menggunakan akaun Google awak sendiri.</p>
   </div>`;
 }

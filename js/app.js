@@ -5,6 +5,7 @@ import { state, load, loadCache, hasCache, canEdit } from './store.js';
 import { toast, openSheet, busy } from './ui.js';
 import { parseSheetId } from './util.js';
 import { loginView } from './views/login.js';
+import { installCard } from './install.js';
 import utama from './views/utama.js';
 import cari from './views/cari.js';
 import butiran from './views/butiran.js';
@@ -96,19 +97,45 @@ document.addEventListener('click', (e) => {
   const ins = e.target.closest('[data-install]');
   if (ins && window.__ampInstall) {
     window.__ampInstall.prompt();
-    window.__ampInstall.userChoice.finally(() => { window.__ampInstall = null; route(true); });
+    window.__ampInstall.userChoice.finally(() => { window.__ampInstall = null; refreshInstallCards(); });
     return;
   }
   if (e.target.closest('[data-install-x]')) {
     try { localStorage.setItem('amp-install-x', '1'); } catch {}
     route(true);
+    return;
   }
+  const cp = e.target.closest('[data-copy]');
+  if (cp) copyText(cp.dataset.copy);
 });
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Pautan disalin. Tampal di Chrome atau Safari.', 'ok');
+  } catch {
+    window.prompt('Salin pautan ini:', text);
+  }
+}
+
+function refreshInstallCards() {
+  document.querySelectorAll('.install-card').forEach((el) => {
+    const html = installCard();
+    if (html) el.outerHTML = html; else el.remove();
+  });
+  if (started && parseHash().name === 'utama') route(true);
+}
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   window.__ampInstall = e;
-  if (started && parseHash().name === 'utama') route(true);
+  refreshInstallCards();
+});
+
+window.addEventListener('appinstalled', () => {
+  window.__ampInstall = null;
+  toast('App dipasang. Buka dari ikon di skrin utama.', 'ok');
+  refreshInstallCards();
 });
 
 function reconnect() {
