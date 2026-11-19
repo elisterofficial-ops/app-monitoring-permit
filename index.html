@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; manifest-src 'self'; worker-src 'self'; base-uri 'self'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>APP Monitoring Permit</title>
+<meta name="description" content="Pemantauan permit Bahagian Penguatkuasa: hasil kutipan, carian permit, pembaharuan dan surat peringatan.">
+<meta name="theme-color" content="#070b14">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Monitoring Permit">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<div class="bg-glow" aria-hidden="true"><span class="g1"></span><span class="g2"></span></div>
+<main id="app">
+  <div class="boot"><img src="icons/icon-192.png" alt="" width="88" height="88"><span>Memuatkan APP Monitoring Permit…</span></div>
+</main>
+<nav id="nav" class="nav" aria-label="Navigasi utama" hidden></nav>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div id="sheet-root"></div>
+<noscript><p style="padding:24px;color:#e8eeff">App ini memerlukan JavaScript.</p></noscript>
+</body>
+</html>

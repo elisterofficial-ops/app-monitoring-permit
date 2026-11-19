@@ -1,0 +1,8 @@
+# Jangan sesekali muat naik data permit atau fail demo ke GitHub.
+__demo/
+demo/
+*.json.local
+*.csv
+*.xlsx
+.DS_Store
+Thumbs.db
