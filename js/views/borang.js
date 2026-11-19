@@ -1,14 +1,15 @@
 // Borang tambah, ulang, baharui dan sunting permit.
 import { I } from '../icons.js';
 import {
-  esc, fmtDate, fmtRM, isoDate, fromIso, today, addDays, diffDays, numOrNull, tcase, scase, norm, debounce, SEKALI, TEMPOH,
+  esc, fmtDate, fmtRM, isoDate, fromIso, today, addDays, diffDays, numOrNull, tcase, scase, norm, debounce, SEKALI, TEMPOH, tempohLabel,
 } from '../util.js';
 import {
   state, jenisInfo, anggaran, addRecord, updateRecord, frequent, shortName, addMonths, INPUT_KEYS,
   compressImage, uploadPhoto,
 } from '../store.js';
-import { header, empty, stepper, toast, busy, pickFile, getLocation } from '../ui.js';
-import { scanPermit, confirmNumber } from './scan.js';
+import { header, empty, stepper, toast, busy, pickFile, getLocation, openSheet } from '../ui.js';
+import { scanPermit, confirmNumber, draft, imbasPermit, imbasResit, askMatch } from './scan.js';
+import { sameName } from '../imbas.js';
 
 const COPY_KEYS = ['jenis', 'tempoh', 'nama', 'pengurus', 'alamat', 'telefon', 'kawasan', 'kedudukan', 'kuantiti', 'k10', 'k20', 'hiburan', 'kadarKhas', 'koordinat', 'gambarLokasi'];
 const NUMS = new Set(['kuantiti', 'k10', 'k20', 'hiburan', 'kadarKhas', 'dibayar']);
@@ -70,10 +71,104 @@ function opt(list, cur, { blankLabel = 'Pilih…', fmt = (x) => x } = {}) {
   return `<option value="">${esc(blankLabel)}</option>` + items.map((x) => `<option value="${esc(x)}"${x === cur ? ' selected' : ''}>${esc(fmt(x))}</option>`).join('');
 }
 
+// Medan yang diisi dari imbasan (SCAN) dan nilai imbasan yang berbeza dengan rekod sedia ada (DIFF).
+let SCAN = new Set();
+let DIFF = {};
+const TAG = '<span class="scan-tag">imbasan</span>';
+const mark = (k) => (SCAN.has(k) ? ' scanned' : '');
+const tag = (k) => (SCAN.has(k) ? TAG : '');
+
+function showVal(k, v) {
+  if (DATES.has(k)) return fmtDate(v);
+  if (k === 'dibayar') return fmtRM(v);
+  if (k === 'tempoh') return tempohLabel(v);
+  if (k === 'jenis') return scase(v);
+  if (k === 'kawasan') return tcase(v);
+  return String(v ?? '').replace(/\n/g, ', ');
+}
+
+function diffHint(k) {
+  if (!(k in DIFF)) return '';
+  return `<div class="scan-diff" data-diff="${k}"><span>Imbasan: <b>${esc(showVal(k, DIFF[k]))}</b></span><button type="button" class="link" data-use="${k}">Guna</button></div>`;
+}
+
 function field(k, label, f, { type = 'text', ph = '', mode = '', cls = '', list = '' } = {}) {
   const v = DATES.has(k) ? isoDate(f[k]) : f[k] == null ? '' : f[k];
-  return `<div class="fld ${cls}"><label class="lbl" for="f-${k}">${esc(label)}</label>
-    <input id="f-${k}" class="inp" data-k="${k}" type="${type}" value="${esc(v)}" placeholder="${esc(ph)}"${mode ? ` inputmode="${mode}"` : ''}${list ? ` list="${list}"` : ''} autocomplete="off"></div>`;
+  return `<div class="fld ${cls}"><label class="lbl" for="f-${k}">${esc(label)}${tag(k)}</label>
+    <input id="f-${k}" class="inp${mark(k)}" data-k="${k}" type="${type}" value="${esc(v)}" placeholder="${esc(ph)}"${mode ? ` inputmode="${mode}"` : ''}${list ? ` list="${list}"` : ''} autocomplete="off">${diffHint(k)}</div>`;
+}
+
+// Permit baru dari imbasan: semua medan yang dibaca diisi.
+function applyNew(f, d) {
+  for (const k of d.keys) { f[k] = d.fields[k]; SCAN.add(k); }
+  if (d.fields.mula && !d.fields.tamat && f.tempoh !== SEKALI) f.tamat = addDays(addMonths(f.mula, 12), -1);
+  if (f.tempoh === SEKALI) f.tamat = null;
+  f.permitAsal = d.permitAsal;
+}
+
+// Lengkapkan rekod sedia ada: isi medan yang kosong sahaja; nilai yang berbeza ditunjuk untuk dipilih.
+function applyMerge(f, d) {
+  for (const k of d.keys) {
+    const v = d.fields[k];
+    const cur = f[k];
+    if (cur == null || cur === '') { f[k] = v; SCAN.add(k); continue; }
+    if (k === 'nama' || k === 'pengurus') { if (!sameName(cur, v)) DIFF[k] = v; continue; }
+    if (typeof cur === 'string' && typeof v === 'string' && norm(cur) === norm(v)) continue;
+    if (!same(cur, v)) DIFF[k] = v;
+  }
+  if (!f.permitAsal) f.permitAsal = d.permitAsal;
+}
+
+function chooser() {
+  return `<div class="page">
+    ${header('Tambah permit', { back: '#/utama', sub: 'Pilih cara mengisi butiran permit' })}
+    <button type="button" class="choice main" data-imbas="kamera">
+      <span class="choice-ic">${I.camera}</span>
+      <span class="choice-t">Imbas permit</span>
+      <span class="sub">Ambil gambar surat kelulusan atau permit MDS. Butiran diisi automatik, awak cuma semak dan betulkan.</span>
+    </button>
+    <button type="button" class="link center" data-imbas="galeri">atau pilih gambar dari galeri</button>
+    <a class="choice" href="#/tambah/baru">
+      <span class="choice-ic v">${I.edit}</span>
+      <span class="choice-t">Isi manual</span>
+      <span class="sub">Taip semua butiran sendiri.</span>
+    </a>
+  </div>`;
+}
+
+function bindChooser(el, ctx) {
+  const main = el.querySelector('.choice.main');
+  const title = main.querySelector('.choice-t');
+  const reset = () => {
+    main.disabled = false;
+    title.textContent = 'Imbas permit';
+    el.querySelectorAll('[data-imbas]').forEach((b) => { b.disabled = false; });
+  };
+  el.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-imbas]');
+    if (!b || main.disabled) return;
+    try {
+      await ctx.ensureAuth();
+      const d = await imbasPermit({
+        capture: b.dataset.imbas === 'kamera',
+        step: (t) => {
+          el.querySelectorAll('[data-imbas]').forEach((x) => { x.disabled = true; });
+          title.innerHTML = `<span class="spin" aria-hidden="true"></span> ${esc(t)}`;
+        },
+      });
+      if (!d) { reset(); return; }
+      if (!d.keys.length) toast('Teks tidak dapat dibaca dari gambar. Gambar permit tetap disimpan, sila isi butiran.', 'err');
+      if (d.match) {
+        const ans = await askMatch(d.match);
+        if (!ans) { reset(); return; }
+        if (ans === 'lengkap') { ctx.go(`#/sunting/${encodeURIComponent(d.match.r.id)}?imbas=1`); return; }
+      }
+      ctx.go('#/tambah/imbas');
+    } catch (err) {
+      reset();
+      ctx.fail(err);
+    }
+  });
 }
 
 export default {
@@ -81,28 +176,43 @@ export default {
   hideNav: true,
   render(ctx) {
     const mode = ctx.name;
-    const id = String(ctx.arg || '').toUpperCase();
+    if (mode === 'tambah' && !ctx.arg) return chooser();
+    const id = mode === 'tambah' ? '' : String(ctx.arg || '').toUpperCase();
     if (mode === 'ulang' && !id) return picker();
     const src = id ? state.byId.get(id) : null;
     if ((mode !== 'tambah') && !src) return `<div class="page">${header('Permit', { back: '#/utama' })}${empty('Rekod tidak dijumpai')}</div>`;
+    SCAN = new Set();
+    DIFF = {};
+    const d = (mode === 'tambah' && ctx.arg === 'imbas') || (mode === 'sunting' && ctx.q.has('imbas')) ? draft.v : null;
     const f = mode === 'tambah' ? blank() : mode === 'sunting' ? fromExisting(src) : fromRecord(src, mode);
+    if (d && mode === 'tambah') applyNew(f, d);
+    if (d && mode === 'sunting') applyMerge(f, d);
     ctx.form = f;
-    const title = { tambah: 'Tambah permit', ulang: 'Ulang permit', baharui: 'Baharui permit', sunting: 'Sunting rekod' }[mode];
+    const title = d && mode === 'sunting' ? 'Lengkapkan rekod' : { tambah: 'Tambah permit', ulang: 'Ulang permit', baharui: 'Baharui permit', sunting: 'Sunting rekod' }[mode];
     let banner = '';
     if (mode === 'ulang') banner = `<div class="vbanner"><div>Disalin dari <b>${esc(src.id)}</b> · ${esc(fmtDate(src.mula))}</div><a href="#/ulang">Tukar</a></div>`;
     if (mode === 'baharui') banner = `<div class="vbanner"><div>Pembaharuan untuk <b>${esc(src.id)}</b> · tamat ${esc(fmtDate(src.tamat))}</div></div>`;
     if (mode === 'sunting') banner = `<div class="vbanner"><div>Menyunting <b>${esc(src.id)}</b>. ID rekod tidak berubah.</div></div>`;
+    if (d) {
+      const nd = Object.keys(DIFF).length;
+      const msg = SCAN.size || nd
+        ? `<b>${SCAN.size ? `${SCAN.size} medan diisi dari imbasan.` : 'Tiada medan kosong untuk diisi.'}</b>${nd ? ` ${nd} berbeza dengan rekod, pilih "Guna" jika imbasan betul.` : ''} <span class="sub">Semak medan bertanda biru sebelum simpan. Tekan gambar untuk lihat besar.</span>`
+        : '<b>Teks tidak dapat dibaca.</b> <span class="sub">Gambar permit tetap disimpan. Isi butiran sendiri, tekan gambar untuk rujukan.</span>';
+      banner += `<div class="scanbar"><button type="button" class="scan-thumb" data-act="lihat"><img src="${esc(d.thumb)}" alt="Gambar permit yang diimbas"></button><div>${msg}</div></div>`;
+    }
     const jenisList = state.tetapan.jenis.map((j) => j.jenis);
     const names = [...new Set(state.records.map((r) => r.nama))].sort();
+    const back = src ? `#/permit/${encodeURIComponent(src.id)}` : mode === 'tambah' ? '#/tambah' : '#/utama';
     return `<div class="page form-page">
-      ${header(title, { back: src ? `#/permit/${encodeURIComponent(src.id)}` : '#/utama' })}
+      ${header(title, { back })}
       ${banner}
-      <div class="seg" role="radiogroup" aria-label="Jenis tempoh">
+      <div class="seg${mark('tempoh')}" role="radiogroup" aria-label="Jenis tempoh">
         ${Object.entries(TEMPOH).map(([k, label]) => `<button type="button" role="radio" data-tempoh="${k}" aria-checked="${f.tempoh === k}">${label}</button>`).join('')}
       </div>
+      ${diffHint('tempoh')}
       <div class="grid2">
-        <div class="fld"><label class="lbl" for="f-jenis">Jenis permit</label><select id="f-jenis" class="inp" data-k="jenis">${opt(jenisList, f.jenis, { fmt: scase })}</select></div>
-        <div class="fld"><label class="lbl" for="f-kawasan">Kawasan</label><select id="f-kawasan" class="inp" data-k="kawasan">${opt(state.tetapan.kawasan, f.kawasan, { fmt: tcase })}</select></div>
+        <div class="fld"><label class="lbl" for="f-jenis">Jenis permit${tag('jenis')}</label><select id="f-jenis" class="inp${mark('jenis')}" data-k="jenis">${opt(jenisList, f.jenis, { fmt: scase })}</select>${diffHint('jenis')}</div>
+        <div class="fld"><label class="lbl" for="f-kawasan">Kawasan${tag('kawasan')}</label><select id="f-kawasan" class="inp${mark('kawasan')}" data-k="kawasan">${opt(state.tetapan.kawasan, f.kawasan, { fmt: tcase })}</select>${diffHint('kawasan')}</div>
       </div>
       ${field('nama', 'Nama pemohon / syarikat', f, { list: 'names' })}
       <datalist id="names">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
@@ -110,13 +220,13 @@ export default {
         ${field('pengurus', 'Nama pengurus premis', f)}
         ${field('telefon', 'No. telefon', f, { type: 'tel', mode: 'tel', ph: '01x-xxxxxxx' })}
       </div>
-      <div class="fld"><label class="lbl" for="f-alamat">Alamat premis</label><textarea id="f-alamat" class="inp" data-k="alamat" rows="2" placeholder="Baris 1: no. dan jalan. Baris 2: poskod dan bandar">${esc(f.alamat)}</textarea></div>
+      <div class="fld"><label class="lbl" for="f-alamat">Alamat premis${tag('alamat')}</label><textarea id="f-alamat" class="inp${mark('alamat')}" data-k="alamat" rows="2" placeholder="Baris 1: no. dan jalan. Baris 2: poskod dan bandar">${esc(f.alamat)}</textarea>${diffHint('alamat')}</div>
       ${field('kedudukan', 'Kedudukan petak / lokasi', f, { ph: 'Contoh: depan kedai, lot 3 dan 4' })}
 
       <div class="grid2">
         ${field('mula', 'Tarikh mula', f, { type: 'date' })}
-        <div class="fld" id="tamat-fld"><label class="lbl" for="f-tamat" id="tamat-l">Tarikh tamat</label>
-          <input id="f-tamat" class="inp" data-k="tamat" type="date" value="${esc(isoDate(f.tamat))}"></div>
+        <div class="fld" id="tamat-fld"><label class="lbl" for="f-tamat"><span id="tamat-l">Tarikh tamat</span>${tag('tamat')}</label>
+          <input id="f-tamat" class="inp${mark('tamat')}" data-k="tamat" type="date" value="${esc(isoDate(f.tamat))}">${diffHint('tamat')}</div>
       </div>
       <p class="sub" id="sekali-note" hidden>Sekali bayar: tiada tarikh tamat dan tiada surat peringatan.</p>
       <div class="chips" id="per-chips" aria-label="Tempoh cepat">
@@ -137,9 +247,9 @@ export default {
       </details>
 
       <section class="card form-card">
-        <div class="fld"><label class="lbl" for="f-noPermit">No. permit</label>
-          <div class="inrow"><input id="f-noPermit" class="inp" data-k="noPermit" value="${esc(f.noPermit)}" placeholder="Taip atau imbas dari gambar permit" autocomplete="off">
-          <button type="button" class="btn ghost sm" data-act="imbas">${I.camera}Imbas</button></div></div>
+        <div class="fld"><label class="lbl" for="f-noPermit">No. permit${tag('noPermit')}</label>
+          <div class="inrow"><input id="f-noPermit" class="inp${mark('noPermit')}" data-k="noPermit" value="${esc(f.noPermit)}" placeholder="Taip atau imbas dari gambar permit" autocomplete="off">
+          <button type="button" class="btn ghost sm" data-act="imbas">${I.camera}Imbas</button></div>${diffHint('noPermit')}</div>
         <div class="files">
           <button type="button" class="fbtn${f.permitAsal ? ' done' : ' dashed'}" data-act="permit">${f.permitAsal ? I.check : I.image}<span>${f.permitAsal ? 'Permit asal disimpan' : 'Gambar permit asal'}</span></button>
           <button type="button" class="fbtn${f.gambarLokasi ? ' done' : ' dashed'}" data-act="gambar">${f.gambarLokasi ? I.check : I.camera}<span>${f.gambarLokasi ? 'Gambar lokasi disimpan' : 'Gambar lokasi'}</span></button>
@@ -150,7 +260,7 @@ export default {
       </section>
 
       <section class="card form-card">
-        <h2 class="h2">Bayaran</h2>
+        <div class="card-h"><h2 class="h2">Bayaran</h2><button type="button" class="btn ghost sm" data-act="resit">${I.camera}Imbas resit</button></div>
         <div class="grid2">
           ${field('dibayar', 'Jumlah dibayar (RM)', f, { type: 'number', mode: 'decimal', ph: '0.00' })}
           ${field('tarikhBayar', 'Tarikh bayar', f, { type: 'date' })}
@@ -170,7 +280,8 @@ export default {
   },
   bind(el, ctx) {
     const mode = ctx.name;
-    const id = String(ctx.arg || '').toUpperCase();
+    if (mode === 'tambah' && !ctx.arg) { bindChooser(el, ctx); return; }
+    const id = mode === 'tambah' ? '' : String(ctx.arg || '').toUpperCase();
     if (mode === 'ulang' && !id) {
       const inp = el.querySelector('#pq');
       inp.addEventListener('input', debounce(() => {
@@ -198,7 +309,7 @@ export default {
       const lbl = el.querySelector('#st-qty .stepper-l');
       const kadar = f.kadarKhas || (bermusim ? info.kadarHarian : info.kadarStandard);
       const asas = bermusim ? 'sehari' : String(info.asasKadar || '').toLowerCase();
-      lbl.innerHTML = `${esc(scase(info.unitKuantiti || 'Kuantiti'))}${kadar ? ` <span class="muted">· RM${esc(kadar)}${asas ? ` ${esc(asas)}` : ''}</span>` : ''}`;
+      lbl.innerHTML = `${esc(scase(info.unitKuantiti || 'Kuantiti'))}${kadar ? ` <span class="muted">· RM${esc(kadar)}${asas ? ` ${esc(asas)}` : ''}</span>` : ''}${tag('kuantiti')}`;
       const days = f.mula && f.tamat ? diffDays(f.mula, f.tamat) + 1 : 0;
       $('#tamat-l').textContent = days > 0 ? `Tarikh tamat · ${days} hari` : 'Tarikh tamat';
       const a = anggaran(f);
@@ -206,6 +317,40 @@ export default {
       $('#ket').textContent = a ? a.ket : (f.jenis ? `Kadar ${scase(f.jenis)} belum ditetapkan dalam TETAPAN` : 'Pilih jenis permit');
       $('#use-amt').hidden = !a || f.dibayar === a.total;
       $('#use-amt').dataset.v = a ? a.total : '';
+    };
+
+    // Medan yang disentuh pengguna tidak lagi bertanda "imbasan".
+    const unmark = (k) => {
+      if (!SCAN.delete(k)) return;
+      const inp = $(`#f-${k}`);
+      if (inp) inp.classList.remove('scanned');
+      const lbl = el.querySelector(`label[for="f-${k}"] .scan-tag`);
+      if (lbl) lbl.remove();
+      if (k === 'tempoh') $('.seg').classList.remove('scanned');
+    };
+    // Isi medan dari imbasan resit atau butang "Guna".
+    const setField = (k, v) => {
+      f[k] = v;
+      if (k === 'tempoh') {
+        if (v === SEKALI) f.tamat = null;
+      } else {
+        const inp = $(`#f-${k}`);
+        if (inp) inp.value = DATES.has(k) ? isoDate(v) : v ?? '';
+      }
+      if (k === 'kuantiti') {
+        const box = el.querySelector('[data-stepper="kuantiti"]');
+        box.querySelector('.st-v').textContent = v;
+        box.classList.toggle('on', v > 0);
+      }
+      SCAN.add(k);
+      const inp = $(`#f-${k}`);
+      if (inp) inp.classList.add('scanned');
+      const lbl = el.querySelector(`label[for="f-${k}"]`);
+      if (lbl && !lbl.querySelector('.scan-tag')) lbl.insertAdjacentHTML('beforeend', TAG);
+      if (k === 'tempoh') $('.seg').classList.add('scanned');
+      const hint = el.querySelector(`[data-diff="${k}"]`);
+      if (hint) hint.remove();
+      delete DIFF[k];
     };
 
     el.addEventListener('input', (e) => {
@@ -216,16 +361,25 @@ export default {
       if (DATES.has(k)) f[k] = fromIso(v);
       else if (NUMS.has(k)) f[k] = numOrNull(v);
       else f[k] = v;
+      unmark(k);
       refresh();
     });
     el.addEventListener('change', (e) => {
       const t = e.target.closest('select[data-k]');
-      if (t) { f[t.dataset.k] = t.value; refresh(); }
+      if (t) { f[t.dataset.k] = t.value; unmark(t.dataset.k); refresh(); }
     });
 
     el.addEventListener('click', async (e) => {
+      const use = e.target.closest('[data-use]');
+      if (use) {
+        const k = use.dataset.use;
+        if (k in DIFF) setField(k, DIFF[k]);
+        refresh();
+        return;
+      }
       const tp = e.target.closest('[data-tempoh]');
       if (tp) {
+        unmark('tempoh');
         f.tempoh = tp.dataset.tempoh;
         if (f.tempoh !== SEKALI && !f.tamat) {
           const start = f.mula || today();
@@ -240,6 +394,7 @@ export default {
         const box = st.closest('[data-stepper]');
         const k = box.dataset.stepper;
         const min = k === 'kuantiti' ? 1 : 0;
+        SCAN.delete(k);
         f[k] = Math.max(min, Number(f[k] || 0) + Number(st.dataset.step));
         box.querySelector('.st-v').textContent = f[k];
         box.classList.toggle('on', f[k] > 0);
@@ -271,6 +426,22 @@ export default {
             $('#f-koordinat').value = f.koordinat;
             busy(b, false);
             toast('Lokasi semasa diisi.', 'ok');
+          } else if (act === 'lihat') {
+            const img = draft.v ? draft.v.thumb : '';
+            openSheet(`<h2 class="h2">Gambar permit</h2>
+              <img class="scan-full" src="${esc(img)}" alt="Gambar permit yang diimbas">
+              ${f.permitAsal ? `<a class="btn ghost wide" href="${esc(f.permitAsal)}" target="_blank" rel="noopener">${I.ext}Buka dalam Drive</a>` : ''}
+              <button type="button" class="btn ghost wide" data-close>Tutup</button>`);
+          } else if (act === 'resit') {
+            await ctx.ensureAuth();
+            const got = await imbasResit({ step: (t) => busy(b, true, t) });
+            busy(b, false);
+            if (!got) return;
+            const keys = Object.keys(got);
+            if (!keys.length) { toast('Resit tidak dapat dibaca. Isi bayaran sendiri.', 'err'); return; }
+            keys.forEach((k) => setField(k, got[k]));
+            refresh();
+            toast(`${keys.length} medan bayaran diisi dari resit. Sila semak.`, 'ok');
           } else if (act === 'imbas') {
             await ctx.ensureAuth();
             const res = await scanPermit(src && mode === 'sunting' ? src.id : f.nama || 'Permit baru');
@@ -335,10 +506,12 @@ export default {
           const changes = {};
           for (const [k, v] of Object.entries(data)) if (!same(v, orig[k])) changes[k] = v ?? '';
           await ctx.withAuth(() => updateRecord(src.id, changes));
+          draft.v = null;
           toast(Object.keys(changes).length ? 'Perubahan disimpan.' : 'Tiada perubahan.', 'ok');
           ctx.go(`#/permit/${encodeURIComponent(src.id)}`);
         } else {
           const newId = await ctx.withAuth(() => addRecord(data));
+          draft.v = null;
           toast(`Permit ${newId} disimpan.`, 'ok');
           ctx.go(`#/permit/${encodeURIComponent(newId)}`);
         }

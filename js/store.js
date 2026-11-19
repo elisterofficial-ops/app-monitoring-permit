@@ -4,6 +4,7 @@ import { sheets, drive, docs } from './google.js';
 import {
   toDate, numOrNull, str, today, addDays, addMonths, diffDays, fmtLong, dayName, norm, isoDate, toNum, driveId,
 } from './util.js';
+import { permitNumbers } from './imbas.js';
 
 const DAFTAR = 'DAFTAR';
 const TETAPAN = 'TETAPAN';
@@ -663,26 +664,24 @@ export async function uploadPhoto(blob, name) {
   return drive.upload(blob, { name, parents: [parent], mimeType: blob.type || 'image/jpeg' });
 }
 
-export function extractPermitNumbers(text) {
-  const out = new Set();
-  const t = String(text || '').replace(/\r/g, '');
-  const clean = (s) => s.replace(/\s+/g, '').replace(/\|/g, '/').replace(/[.,;:]+$/, '').toUpperCase();
-  for (const m of t.matchAll(/M\s?D\s?S(?:\s*[/|]\s*[A-Z0-9][A-Z0-9.()-]*)+/gi)) out.add(clean(m[0]));
-  for (const m of t.matchAll(/(?:no\.?\s*(?:permit|lesen|siri)|permit\s*no\.?)\s*[:-]?\s*([A-Z0-9][A-Z0-9./()-]{2,40})/gi)) out.add(clean(m[1]));
-  return [...out].filter((x) => x.length >= 5).slice(0, 5);
-}
-
 // OCR guna Google Drive: gambar ditukar ke Google Doc sementara, teksnya dibaca, kemudian dibuang ke Sampah.
-export async function ocrPermit(blob) {
-  if (state.demo) return ['ABC/700/1JLD.2(34)'];
+// Mod demo membaca teks contoh dari pelayan ujian (bukan dari repo). kind: 'permit' atau 'resit'.
+export async function ocrText(blob, kind = 'permit') {
+  if (state.demo) {
+    const res = await fetch(`__demo/ocr/${kind}.txt`, { cache: 'no-store' });
+    return res.ok ? res.text() : '';
+  }
   const parent = await folder('folder gambar', 'APP Monitoring Permit - Gambar');
   const doc = await drive.upload(blob, { name: 'OCR sementara', mimeType: 'application/vnd.google-apps.document', parents: [parent] });
   try {
-    const text = await drive.exportFile(doc.id, 'text/plain');
-    return extractPermitNumbers(text);
+    return await drive.exportFile(doc.id, 'text/plain');
   } finally {
     drive.trash(doc.id).catch(() => {});
   }
+}
+
+export async function ocrPermit(blob) {
+  return permitNumbers(await ocrText(blob, 'permit'));
 }
 
 export async function janaSurat(r, ruj) {
