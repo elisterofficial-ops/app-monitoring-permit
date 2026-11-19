@@ -145,15 +145,31 @@ function cleanLine(s) {
   return String(s || '').replace(/\s+/g, ' ').replace(/^[\s,.;:]+|[\s,;:]+$/g, '').trim();
 }
 
-// Alamat dua baris: baris 1 nombor dan jalan, baris 2 poskod dan bandar.
+// Alamat dua baris: baris 1 nombor dan jalan, baris 2 poskod dan bandar. Baris boleh datang terpisah
+// atau sebagai satu baris panjang berkoma ("NO.12,LOT 34,...,94700 SERIAN").
 function alamatOf(lines) {
-  const ls = lines.map(cleanLine).filter(Boolean);
-  if (!ls.length) return '';
-  const p = ls.findIndex((l) => /\b\d{5}\b/.test(l));
-  if (p <= 0) return ls.map((l) => l.replace(/[.,]+$/, '')).join(', ');
-  const l1 = ls.slice(0, p).map((l) => l.replace(/[.,]+$/, '')).join(', ');
-  const l2 = ls.slice(p).map((l) => l.replace(/[.,]+$/, '')).join(', ');
-  return `${l1}\n${l2}`;
+  const s = lines.map(cleanLine).filter(Boolean).map((l) => l.replace(/[.,]+$/, '')).join(', ')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/(,\s*)+/g, ', ');
+  if (!s) return '';
+  const i = s.search(/,\s*\d{5}\b/);
+  return i > 0 ? `${s.slice(0, i)}\n${s.slice(i).replace(/^,\s*/, '')}` : s;
+}
+
+// Nama syarikat: "Sdn. Bhd" / "SDN.BHD" jadi "Sdn Bhd" / "SDN BHD" (ikut huruf asal).
+const syarikat = (s) => String(s || '')
+  .replace(/\bSdn\.?\s*Bhd\.?/i, (m) => (m === m.toUpperCase() ? 'SDN BHD' : 'Sdn Bhd'))
+  .replace(/[.,\s]+$/, '');
+
+// Permulaan alamat dalam baris yang sama dengan nama: "SYARIKAT ABC BERHAD NO.12, LOT 34, ...".
+const ALAMAT_MULA = /[\s,]*\b(?=(?:no\.?\s*\d|lot\s*\d|sl\s*\d|jalan\b|jln\.?\s|lorong\b|lrg\.?\s|block\b|blok\b|tingkat\b|kampung\b|kg\.?\s|taman\b|lebuh\b|batu\s*\d))/i;
+
+// Pisahkan nama dan alamat yang dibaca OCR pada satu baris. Pulangkan [nama, baki alamat].
+export function pisahNama(line) {
+  const s = cleanLine(line);
+  const i = s.search(ALAMAT_MULA);
+  if (i > 2) return [syarikat(s.slice(0, i)), s.slice(i).replace(/^[\s,]+/, '')];
+  return [syarikat(s), ''];
 }
 
 // Baris yang menamatkan blok penerima bila dibaca ke atas dari "Tuan," / "Puan,":
@@ -173,14 +189,15 @@ function penerima(lines) {
     blok.unshift(l);
   }
   if (!blok.length) return null;
-  const syarikat = (s) => s.replace(/\bSdn\.?\s*Bhd\.?/i, 'Sdn Bhd').replace(/[.,]+$/, '');
   const c = blok.findIndex((l) => SYARIKAT.test(l));
   if (c >= 0) {
     const sebelum = c > 0 ? blok[c - 1] : '';
     const orang = sebelum && !/\d/.test(sebelum) ? sebelum : '';
-    return { nama: syarikat(blok[c]), pengurus: orang, alamat: alamatOf(blok.slice(c + 1)), salam: e };
+    const [nama, baki] = pisahNama(blok[c]);
+    return { nama, pengurus: orang, alamat: alamatOf([baki, ...blok.slice(c + 1)]), salam: e };
   }
-  return { nama: syarikat(blok[0]), pengurus: '', alamat: alamatOf(blok.slice(1)), salam: e };
+  const [nama, baki] = pisahNama(blok[0]);
+  return { nama, pengurus: '', alamat: alamatOf([baki, ...blok.slice(1)]), salam: e };
 }
 
 // Tajuk surat: baris selepas "Tuan," sebelum "Dengan segala hormat".
@@ -292,8 +309,9 @@ export function parseBil(text, opts = {}) {
   if (h >= 0 && e > h) {
     const blok = lines.slice(h + 1, e).map(cleanLine).filter((l) => l && !BISING.test(l));
     if (blok.length) {
-      f.nama = blok[0].replace(/\bSdn\.?\s*Bhd\.?/i, 'Sdn Bhd').replace(/[.,]+$/, '');
-      const al = alamatOf(blok.slice(1));
+      const [nama, baki] = pisahNama(blok[0]);
+      f.nama = nama;
+      const al = alamatOf([baki, ...blok.slice(1)]);
       if (al) f.alamat = al;
     }
   }
@@ -338,9 +356,114 @@ export function parseBil(text, opts = {}) {
   return { fields: f, calon: [], info };
 }
 
-// Surat kelulusan atau bil: pilih pembaca ikut jenis dokumen.
+export const isSementara = (text) => /PERMIT\s+SEMENTARA/i.test(String(text || '')) && /Nama\s+(Pemohon|Premis)/i.test(String(text || ''));
+
+// Label borang permit sementara (contoh Borang Kategori B parking). Nilai boleh berada pada baris yang sama
+// ("Nama Pemohon : X") atau, seperti yang selalu dibaca OCR, dalam blok berasingan selepas semua label.
+const LABEL_PS = [
+  ['pemohon', 'nama\\s+pemohon'],
+  ['alamatPemohon', 'alamat\\s+pemohon'],
+  ['noPermit', 'no\\.?\\s*permit'],
+  ['premis', 'nama\\s+premis'],
+  ['alamatPremis', 'alamat\\s+premis'],
+  ['tempoh', 'tarikh\\s+tamat\\s+tempoh\\s+permit|tempoh\\s+permit|tarikh\\s+tamat'],
+];
+
+function labelValues(lines) {
+  const out = {};
+  for (const l of lines) {
+    for (const [k, p] of LABEL_PS) {
+      const m = l.match(new RegExp(`^\\s*(?:${p})\\s*:\\s*(\\S.*)$`, 'i'));
+      if (m && !(k in out)) out[k] = m[1].trim();
+    }
+  }
+  const order = [];
+  let last = -1;
+  lines.forEach((l, i) => {
+    for (const [k, p] of LABEL_PS) {
+      if (new RegExp(`^\\s*(?:${p})\\s*:?\\s*$`, 'i').test(l)) { order.push(k); last = i; break; }
+    }
+  });
+  if (order.length && last >= 0) {
+    const vals = [];
+    for (let i = last + 1; i < lines.length && vals.length < order.length; i++) {
+      const l = lines[i].trim();
+      if (!l) continue;
+      if (/^tarikh\s*:/i.test(l)) continue; // tarikh surat terselit di tengah nilai
+      if (/^(jenis\s+penggunaan|caj\b|adalah\s+dengan)/i.test(l)) break;
+      vals.push(l.replace(/^[:;]\s*/, ''));
+    }
+    order.forEach((k, j) => { if (vals[j] && !(k in out)) out[k] = vals[j]; });
+  }
+  return out;
+}
+
+/** Permit sementara majlis (borang label dan nilai): pemohon, premis, alamat, No. permit, tempoh dan caj. */
+export function parseSementara(text, opts = {}) {
+  const t = String(text || '').replace(/\r/g, '').replace(/ /g, ' ');
+  const lines = t.split('\n');
+  const f = {};
+  const info = {};
+  const v = labelValues(lines);
+
+  const calon = permitNumbers(t);
+  const np = v.noPermit && /M\s?D\s?S\s*\//i.test(v.noPermit) ? cleanPermitNo(v.noPermit) : '';
+  if (np || calon[0]) f.noPermit = np || calon[0];
+
+  const pemohon = v.pemohon ? syarikat(cleanLine(v.pemohon)) : '';
+  let nama = v.premis ? syarikat(cleanLine(v.premis)) : '';
+  if (!nama && pemohon && SYARIKAT.test(pemohon)) nama = pemohon;
+  const alamatSrc = v.alamatPremis || v.alamatPemohon || '';
+  if (!nama && alamatSrc) nama = pisahNama(alamatSrc.split(',')[0])[0];
+  if (nama) f.nama = nama;
+  if (pemohon && pemohon !== nama && !SYARIKAT.test(pemohon)) f.pengurus = pemohon;
+  if (alamatSrc) {
+    // Buang nama premis di depan alamat ("SYARIKAT ABC SDN.BHD,NO.12,...").
+    const parts = alamatSrc.split(',').map((x) => x.trim()).filter(Boolean);
+    if (parts.length > 1 && nama && norm(syarikat(parts[0])) === norm(nama)) parts.shift();
+    const al = alamatOf([parts.join(', ')]);
+    if (al) f.alamat = al;
+  }
+
+  const head = lines.slice(0, Math.max(0, lines.findIndex((l) => /butir|nama\s+pemohon/i.test(l)))).join(' ');
+  const jenis = jenisOf(head, t, opts.jenis || []);
+  if (jenis) f.jenis = jenis;
+
+  const r = (v.tempoh && findRange(v.tempoh)) || findRange(t);
+  if (r) { f.mula = r.mula; f.tamat = r.tamat; }
+  if (/one\s*off|sekali\s*bayar/i.test(v.tempoh || '')) f.tempoh = 'SEKALI BAYAR';
+  else if (r) f.tempoh = diffDays(r.mula, r.tamat) >= 300 ? 'TAHUNAN' : 'BERMUSIM';
+
+  // Caj bayaran: amaun pertama selepas label "Caj Bayaran" (amaun deposit diabaikan).
+  const ci = lines.findIndex((l) => /caj\s+bayaran/i.test(l));
+  if (ci >= 0) {
+    const baris = lines.slice(ci, ci + 4).join(' ').replace(/caj\s+deposit[\s\S]*?(?=:)/i, ' ');
+    const m = baris.match(/RM\s*([\d,]+(?:\.\d{1,2})?)/i);
+    if (m) f.dibayar = toAmt(m[1]);
+  }
+  if (!f.dibayar) {
+    const a = amount(t, 'caj|bayaran|jumlah');
+    if (a) f.dibayar = a;
+  }
+
+  const q = kuantitiOf(t.replace(/\blot\s*\d+/gi, ''));
+  if (q && jenis !== 'KAKI LIMA' && jenis !== 'ROLLER SHUTTER') f.kuantiti = q;
+  const kaw = kawasanOf(`${f.alamat || ''}\n${t}`, opts.kawasan || []);
+  if (kaw) f.kawasan = kaw;
+
+  const ts = t.match(/tarikh\s*:\s*([^\n]{0,30})/i);
+  if (ts) {
+    const d = findDates(ts[1])[0];
+    if (d) { info.tarikhSurat = d.date; f.tarikhBayar = d.date; }
+  }
+  return { fields: f, calon, info };
+}
+
+// Surat kelulusan, permit sementara atau bil: pilih pembaca ikut jenis dokumen.
 export function parseDokumen(text, opts = {}) {
-  return isBil(text) ? parseBil(text, opts) : parsePermit(text, opts);
+  if (isBil(text)) return parseBil(text, opts);
+  if (isSementara(text)) return parseSementara(text, opts);
+  return parsePermit(text, opts);
 }
 
 const BAYARAN = ['dibayar', 'resit', 'tarikhBayar'];
