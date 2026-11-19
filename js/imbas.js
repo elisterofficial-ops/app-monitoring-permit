@@ -1,6 +1,6 @@
 // Baca teks OCR surat kelulusan / permit majlis dan resit bayaran, kemudian pulangkan medan untuk borang.
 // Fungsi tulen (tiada DOM, tiada rangkaian) supaya mudah diuji.
-import { ymd, diffDays, norm } from './util.js';
+import { ymd, diffDays, norm, addDays, addMonths } from './util.js';
 
 const BULAN = {
   jan: 0, januari: 0, january: 0, feb: 1, februari: 1, february: 1, mac: 2, mar: 2, march: 2, apr: 3, april: 3,
@@ -247,17 +247,110 @@ export function parsePermit(text, opts = {}) {
   return { fields: f, calon, info };
 }
 
-/** Teks OCR resit bayaran: jumlah, No. resit dan tarikh bayar. */
+// Cop kaunter pada bil yang sudah dibayar, contoh "B7 M1 120000001 01/01/2026 RM 20.00 B7 TUNAI".
+function copKaunter(t) {
+  const m = t.match(/\b(\d{7,12})\s+(\d{1,2}\s*\/\s*\d{1,2}\s*\/\s*\d{4})\s+RM\s*([\d,]+(?:\.\d{1,2})?)/i);
+  if (!m) return null;
+  const d = findDates(m[2])[0];
+  return { resit: m[1], tarikh: d ? d.date : null, amaun: toAmt(m[3]) };
+}
+
+export const isBil = (text) => /BIL\s*PELBAGAI|MISCELLANEOUS\s*BILL/i.test(String(text || ''));
+
+// Tarikh tamat dari "(1 hari)", "(2 minggu)", "(6 bulan)" atau "(1 tahun)" selepas tarikh mula.
+function tamatDari(mula, s) {
+  const m = String(s || '').match(/\(?\s*(\d{1,3})\s*(hari|minggu|bulan|tahun)\s*\)?/i);
+  if (!m) return mula;
+  const n = +m[1];
+  const u = m[2].toLowerCase();
+  if (u === 'hari') return addDays(mula, Math.max(1, n) - 1);
+  if (u === 'minggu') return addDays(mula, n * 7 - 1);
+  return addDays(addMonths(mula, u === 'bulan' ? n : n * 12), -1);
+}
+
+/**
+ * Bil Pelbagai / Miscellaneous Bill majlis: penerima, keterangan akaun, amaun dan cop kaunter.
+ * No. Resit ialah nombor pada cop kaunter; jika bil belum dicop, No. Bil digunakan.
+ */
+export function parseBil(text, opts = {}) {
+  const t = String(text || '').replace(/\r/g, '').replace(/ /g, ' ');
+  const lines = t.split('\n');
+  const f = {};
+  const info = {};
+
+  const h = lines.findIndex((l) => isBil(l));
+  const e = lines.findIndex((l, i) => i > h && /^\s*(no\.?\s*bil|bill\s*no|tarikh\s*bil|keterangan|particulars)/i.test(l));
+  if (h >= 0 && e > h) {
+    const blok = lines.slice(h + 1, e).map(cleanLine).filter((l) => l && !BISING.test(l));
+    if (blok.length) {
+      f.nama = blok[0].replace(/\bSdn\.?\s*Bhd\.?/i, 'Sdn Bhd').replace(/[.,]+$/, '');
+      const al = alamatOf(blok.slice(1));
+      if (al) f.alamat = al;
+    }
+  }
+
+  // Keterangan akaun: dari "PARTICULARS OF ACCOUNT" hingga "Ruj. Kami" (tarikh surat selepas Ruj bukan tarikh permit).
+  const pm = t.match(/PARTICULARS\s+OF\s+ACCOUNT\s*([\s\S]*?)(?=Ruj\.?\s*Kami|Sila\s+Jelaskan|\n\s*:|AMAUN|$)/i);
+  const part = pm ? pm[1].replace(/\s+/g, ' ').trim() : '';
+  if (part) info.keterangan = part;
+
+  const jenis = jenisOf(part, part, opts.jenis || []);
+  if (jenis) f.jenis = jenis;
+  const q = kuantitiOf(part);
+  if (q && jenis !== 'KAKI LIMA' && jenis !== 'ROLLER SHUTTER') f.kuantiti = q;
+
+  const r = findRange(part);
+  if (r) { f.mula = r.mula; f.tamat = r.tamat; } else {
+    const d = findDates(part)[0];
+    if (d) { f.mula = d.date; f.tamat = tamatDari(d.date, part.slice(d.end, d.end + 25)); }
+  }
+  if (f.mula) f.tempoh = diffDays(f.mula, f.tamat) >= 300 ? 'TAHUNAN' : 'BERMUSIM';
+
+  const dpn = part.match(/\b(di\s+(?:hadapan|depan|tepi|sebelah)\s+[^,.;()]+?)(?=\s+untuk\b|\s+pada\b|\s+bagi\b|[,.;(]|$)/i);
+  if (dpn) f.kedudukan = dpn[1].charAt(0).toUpperCase() + dpn[1].slice(1);
+
+  const kaw = kawasanOf(`${part}\n${f.alamat || ''}`, opts.kawasan || []);
+  if (kaw) f.kawasan = kaw;
+
+  const cop = copKaunter(t);
+  const bil = t.match(/^\s*:\s*([A-Z]\d{5,12})\s*$/m) || t.match(/(?:no\.?\s*bil|bill\s*no\.?)\s*[:.]?\s*([A-Z]\d{5,12})/i);
+  if (bil) info.noBil = bil[1];
+  const tb = t.match(/^\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*$/m);
+  if (tb) info.tarikhBil = findDates(tb[1])[0].date;
+  const billAmt = t.match(/Bill\s*Amt\s*[:.]?\s*RM\s*([\d,]+(?:\.\d{1,2})?)/i);
+
+  const amt = (cop && cop.amaun) || (billAmt && toAmt(billAmt[1])) || amount(t, 'amaun|amount|jumlah');
+  if (amt) f.dibayar = amt;
+  if (cop) { f.resit = cop.resit; info.dibayar = true; } else if (info.noBil) f.resit = info.noBil;
+  const tarikhBayar = (cop && cop.tarikh) || info.tarikhBil;
+  if (tarikhBayar) f.tarikhBayar = tarikhBayar;
+  return { fields: f, calon: [], info };
+}
+
+// Surat kelulusan atau bil: pilih pembaca ikut jenis dokumen.
+export function parseDokumen(text, opts = {}) {
+  return isBil(text) ? parseBil(text, opts) : parsePermit(text, opts);
+}
+
+const BAYARAN = ['dibayar', 'resit', 'tarikhBayar'];
+
+/** Teks OCR resit atau bil yang dicop: jumlah, No. resit dan tarikh bayar. */
 export function parseResit(text) {
   const t = String(text || '').replace(/\r/g, '');
+  if (isBil(t)) {
+    const b = parseBil(t).fields;
+    return { fields: Object.fromEntries(BAYARAN.filter((k) => b[k] != null).map((k) => [k, b[k]])) };
+  }
   const f = {};
+  const cop = copKaunter(t);
   const no = t.match(/(?:no\.?\s*(?:resit|receipt|resi)|(?:resit|receipt)\s*(?:no\.?|number|#))\s*[:.#]?\s*([A-Z0-9][A-Z0-9/-]{3,30})/i);
-  if (no) f.resit = no[1].toUpperCase();
-  const amt = amount(t, 'jumlah|amaun|total|amount|bayaran|dibayar|paid|tunai|cash');
+  if (cop) f.resit = cop.resit;
+  else if (no) f.resit = no[1].toUpperCase();
+  const amt = (cop && cop.amaun) || amount(t, 'jumlah|amaun|total|amount|bayaran|dibayar|paid|tunai|cash');
   if (amt) f.dibayar = amt;
   const lab = t.match(/(?:tarikh|date)\s*[:.]?\s*([^\n]{0,30})/i);
-  const d = (lab && findDates(lab[1])[0]) || findDates(t)[0];
-  if (d) f.tarikhBayar = d.date;
+  const d = (cop && cop.tarikh) || (lab && findDates(lab[1])[0] || findDates(t)[0] || {}).date;
+  if (d) f.tarikhBayar = d;
   return { fields: f };
 }
 
@@ -277,8 +370,10 @@ export function findMatch(fields, records) {
     if (r) return { r, sebab: 'No. permit sama' };
   }
   if (!fields.nama) return null;
-  const near = (a, b) => a && b && Math.abs(diffDays(a, b)) <= 3;
-  const cands = records.filter((x) => sameName(x.nama, fields.nama) && (!fields.jenis || x.jenis === fields.jenis));
-  const r = cands.find((x) => near(x.mula, fields.mula) || near(x.tamat, fields.tamat));
-  return r ? { r, sebab: 'Nama dan tarikh sama' } : null;
+  const gap = (a, b) => (a && b ? Math.abs(diffDays(a, b)) : Infinity);
+  const jarak = (x) => Math.min(gap(x.mula, fields.mula), gap(x.tamat, fields.tamat));
+  const cands = records
+    .filter((x) => sameName(x.nama, fields.nama) && (!fields.jenis || x.jenis === fields.jenis) && jarak(x) <= 3)
+    .sort((a, b) => jarak(a) - jarak(b));
+  return cands[0] ? { r: cands[0], sebab: 'Nama dan tarikh sama' } : null;
 }

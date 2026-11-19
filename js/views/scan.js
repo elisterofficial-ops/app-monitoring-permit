@@ -1,7 +1,7 @@
 // Imbas gambar: permit / surat kelulusan (isi borang) dan resit (isi bayaran). Teks dibaca dengan OCR Google Drive.
 import { esc, isoDate, today, fmtDate, fmtRM, scase } from '../util.js';
 import { state, compressImage, uploadPhoto, ocrText, ocrPermit } from '../store.js';
-import { parsePermit, parseResit, findMatch } from '../imbas.js';
+import { parseDokumen, parseResit, findMatch } from '../imbas.js';
 import { pickFile, openSheet, toast } from '../ui.js';
 import { AuthError } from '../google.js';
 
@@ -20,7 +20,7 @@ export async function imbasPermit({ capture = true, step = () => {} } = {}) {
   step('Membaca teks permit…');
   let text = '';
   try { text = await ocrText(blob, 'permit'); } catch (e) { if (e instanceof AuthError) throw e; text = ''; }
-  const { fields, calon, info } = parsePermit(text, opts());
+  const { fields, calon, info } = parseDokumen(text, opts());
   step('Menyimpan gambar permit…');
   const label = fields.nama || 'Permit baru';
   const up = await uploadPhoto(blob, `${label} - permit asal ${isoDate(today())}.jpg`);

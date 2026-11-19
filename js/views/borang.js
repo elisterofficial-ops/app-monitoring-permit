@@ -125,7 +125,7 @@ function chooser() {
     <button type="button" class="choice main" data-imbas="kamera">
       <span class="choice-ic">${I.camera}</span>
       <span class="choice-t">Imbas permit</span>
-      <span class="sub">Ambil gambar surat kelulusan atau permit MDS. Butiran diisi automatik, awak cuma semak dan betulkan.</span>
+      <span class="sub">Ambil gambar surat kelulusan, permit atau bil MDS yang dicop. Butiran diisi automatik, awak cuma semak dan betulkan.</span>
     </button>
     <button type="button" class="link center" data-imbas="galeri">atau pilih gambar dari galeri</button>
     <a class="choice" href="#/tambah/baru">
