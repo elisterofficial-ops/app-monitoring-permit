@@ -8,8 +8,9 @@ import {
   compressImage, uploadPhoto,
 } from '../store.js';
 import { header, empty, stepper, toast, busy, pickFile, getLocation, openSheet } from '../ui.js';
-import { scanPermit, confirmNumber, draft, imbasPermit, imbasResit, askMatch } from './scan.js';
+import { scanPermit, confirmNumber, draft, imbasPermit, imbasResit, askMatch, simpanGambar, tungguGambar } from './scan.js';
 import { sameName } from '../imbas.js';
+import { AuthError } from '../google.js';
 
 const COPY_KEYS = ['jenis', 'tempoh', 'nama', 'pengurus', 'alamat', 'telefon', 'kawasan', 'kedudukan', 'kuantiti', 'k10', 'k20', 'hiburan', 'kadarKhas', 'koordinat', 'gambarLokasi'];
 const NUMS = new Set(['kuantiti', 'k10', 'k20', 'hiburan', 'kadarKhas', 'dibayar']);
@@ -128,6 +129,7 @@ function chooser() {
       <span class="sub">Ambil gambar surat kelulusan, permit atau bil MDS yang dicop. Butiran diisi automatik, awak cuma semak dan betulkan.</span>
     </button>
     <button type="button" class="link center" data-imbas="galeri">atau pilih gambar dari galeri</button>
+    <button type="button" class="btn ghost wide" id="langkau" hidden>Isi sendiri sementara menunggu</button>
     <a class="choice" href="#/tambah/baru">
       <span class="choice-ic v">${I.edit}</span>
       <span class="choice-t">Isi manual</span>
@@ -139,24 +141,48 @@ function chooser() {
 function bindChooser(el, ctx) {
   const main = el.querySelector('.choice.main');
   const title = main.querySelector('.choice-t');
+  const sub = main.querySelector('.sub');
+  const subAsal = sub.textContent;
+  const langkau = el.querySelector('#langkau');
+  let timer = null;
+  let skip = null;
+  const show = (t) => {
+    el.querySelectorAll('[data-imbas]').forEach((x) => { x.disabled = true; });
+    title.innerHTML = `<span class="spin" aria-hidden="true"></span> ${esc(t)}`;
+  };
   const reset = () => {
+    clearInterval(timer);
     main.disabled = false;
     title.textContent = 'Imbas permit';
+    sub.textContent = subAsal;
+    langkau.hidden = true;
     el.querySelectorAll('[data-imbas]').forEach((b) => { b.disabled = false; });
   };
+  langkau.addEventListener('click', () => { if (skip) skip('langkau'); });
   el.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-imbas]');
     if (!b || main.disabled) return;
     try {
       await ctx.ensureAuth();
-      const d = await imbasPermit({
-        capture: b.dataset.imbas === 'kamera',
-        step: (t) => {
-          el.querySelectorAll('[data-imbas]').forEach((x) => { x.disabled = true; });
-          title.innerHTML = `<span class="spin" aria-hidden="true"></span> ${esc(t)}`;
-        },
-      });
+      const d = await imbasPermit({ capture: b.dataset.imbas === 'kamera', step: show });
       if (!d) { reset(); return; }
+      // Kiraan saat supaya jelas app masih bekerja; pilihan isi sendiri selepas beberapa saat.
+      const tick = () => {
+        const s = Math.round((Date.now() - d.t0) / 1000);
+        show(`Membaca teks permit… ${s} s`);
+        if (s >= 6) {
+          langkau.hidden = false;
+          sub.textContent = 'Bergantung pada kelajuan internet. Boleh mula isi sendiri; medan akan diisi bila teks siap dibaca.';
+        }
+      };
+      tick();
+      timer = setInterval(tick, 1000);
+      const hasil = await Promise.race([d.baca, new Promise((r) => { skip = r; })]);
+      clearInterval(timer);
+      skip = null;
+      if (!el.isConnected) return;
+      if (hasil === 'langkau') { ctx.go('#/tambah/imbas'); return; }
+      if (d.ralat instanceof AuthError) { reset(); ctx.fail(d.ralat); return; }
       if (!d.keys.length) toast('Teks tidak dapat dibaca dari gambar. Gambar permit tetap disimpan, sila isi butiran.', 'err');
       if (d.match) {
         const ans = await askMatch(d.match);
@@ -169,6 +195,25 @@ function bindChooser(el, ctx) {
       ctx.fail(err);
     }
   });
+}
+
+const saat = (ms) => `${Math.max(1, Math.round(ms / 1000))} s`;
+
+// Teks kotak imbasan di atas borang.
+function scanMsg(d) {
+  if (!d.siap) return '<b><span class="spin" aria-hidden="true"></span> Sedang membaca teks permit…</b> <span class="sub">Isi apa yang awak tahu dahulu. Medan yang belum disentuh akan diisi bila teks siap dibaca.</span>';
+  const nd = Object.keys(DIFF).length;
+  const masa = d.masa.baca ? ` Dibaca dalam ${saat(d.masa.baca)}.` : '';
+  if (!SCAN.size && !nd) return `<b>Teks tidak dapat dibaca.</b> <span class="sub">Gambar permit tetap disimpan. Isi butiran sendiri, tekan gambar untuk rujukan.${masa}</span>`;
+  return `<b>${SCAN.size ? `${SCAN.size} medan diisi dari imbasan.` : 'Tiada medan kosong untuk diisi.'}</b>${nd ? ` ${nd} berbeza dengan rekod, pilih "Guna" jika imbasan betul.` : ''} <span class="sub">Semak medan bertanda biru sebelum simpan. Tekan gambar untuk lihat besar.${masa}</span>`;
+}
+
+// Butang Permit Asal: siap, sedang disimpan, atau gagal.
+function permitBtn(f, d) {
+  if (f.permitAsal) return `<button type="button" class="fbtn done" data-act="permit">${I.check}<span>Permit asal disimpan</span></button>`;
+  if (d && !d.gagal) return `<button type="button" class="fbtn wait" data-act="permit-tunggu" disabled><span class="spin" aria-hidden="true"></span><span>Menyimpan gambar permit…</span></button>`;
+  if (d && d.gagal) return `<button type="button" class="fbtn dashed" data-act="permit-ulang">${I.image}<span>Gambar belum disimpan. Tekan untuk cuba lagi</span></button>`;
+  return `<button type="button" class="fbtn dashed" data-act="permit">${I.image}<span>Gambar permit asal</span></button>`;
 }
 
 export default {
@@ -185,21 +230,16 @@ export default {
     DIFF = {};
     const d = (mode === 'tambah' && ctx.arg === 'imbas') || (mode === 'sunting' && ctx.q.has('imbas')) ? draft.v : null;
     const f = mode === 'tambah' ? blank() : mode === 'sunting' ? fromExisting(src) : fromRecord(src, mode);
-    if (d && mode === 'tambah') applyNew(f, d);
-    if (d && mode === 'sunting') applyMerge(f, d);
+    if (d && d.siap && mode === 'tambah') applyNew(f, d);
+    if (d && d.siap && mode === 'sunting') applyMerge(f, d);
     ctx.form = f;
     const title = d && mode === 'sunting' ? 'Lengkapkan rekod' : { tambah: 'Tambah permit', ulang: 'Ulang permit', baharui: 'Baharui permit', sunting: 'Sunting rekod' }[mode];
     let banner = '';
     if (mode === 'ulang') banner = `<div class="vbanner"><div>Disalin dari <b>${esc(src.id)}</b> · ${esc(fmtDate(src.mula))}</div><a href="#/ulang">Tukar</a></div>`;
     if (mode === 'baharui') banner = `<div class="vbanner"><div>Pembaharuan untuk <b>${esc(src.id)}</b> · tamat ${esc(fmtDate(src.tamat))}</div></div>`;
     if (mode === 'sunting') banner = `<div class="vbanner"><div>Menyunting <b>${esc(src.id)}</b>. ID rekod tidak berubah.</div></div>`;
-    if (d) {
-      const nd = Object.keys(DIFF).length;
-      const msg = SCAN.size || nd
-        ? `<b>${SCAN.size ? `${SCAN.size} medan diisi dari imbasan.` : 'Tiada medan kosong untuk diisi.'}</b>${nd ? ` ${nd} berbeza dengan rekod, pilih "Guna" jika imbasan betul.` : ''} <span class="sub">Semak medan bertanda biru sebelum simpan. Tekan gambar untuk lihat besar.</span>`
-        : '<b>Teks tidak dapat dibaca.</b> <span class="sub">Gambar permit tetap disimpan. Isi butiran sendiri, tekan gambar untuk rujukan.</span>';
-      banner += `<div class="scanbar"><button type="button" class="scan-thumb" data-act="lihat"><img src="${esc(d.thumb)}" alt="Gambar permit yang diimbas"></button><div>${msg}</div></div>`;
-    }
+    ctx.scan = d;
+    if (d) banner += `<div class="scanbar"><button type="button" class="scan-thumb" data-act="lihat"><img src="${esc(d.thumb)}" alt="Gambar permit yang diimbas"></button><div id="scan-msg">${scanMsg(d)}</div></div>`;
     const jenisList = state.tetapan.jenis.map((j) => j.jenis);
     const names = [...new Set(state.records.map((r) => r.nama))].sort();
     const back = src ? `#/permit/${encodeURIComponent(src.id)}` : mode === 'tambah' ? '#/tambah' : '#/utama';
@@ -251,7 +291,7 @@ export default {
           <div class="inrow"><input id="f-noPermit" class="inp${mark('noPermit')}" data-k="noPermit" value="${esc(f.noPermit)}" placeholder="Taip atau imbas dari gambar permit" autocomplete="off">
           <button type="button" class="btn ghost sm" data-act="imbas">${I.camera}Imbas</button></div>${diffHint('noPermit')}</div>
         <div class="files">
-          <button type="button" class="fbtn${f.permitAsal ? ' done' : ' dashed'}" data-act="permit">${f.permitAsal ? I.check : I.image}<span>${f.permitAsal ? 'Permit asal disimpan' : 'Gambar permit asal'}</span></button>
+          ${permitBtn(f, d)}
           <button type="button" class="fbtn${f.gambarLokasi ? ' done' : ' dashed'}" data-act="gambar">${f.gambarLokasi ? I.check : I.camera}<span>${f.gambarLokasi ? 'Gambar lokasi disimpan' : 'Gambar lokasi'}</span></button>
         </div>
         <div class="fld"><label class="lbl" for="f-koordinat">Koordinat (lat, long)</label>
@@ -353,6 +393,45 @@ export default {
       delete DIFF[k];
     };
 
+    // Imbasan yang masih berjalan: gambar disimpan di belakang, dan teks yang lewat mengisi
+    // medan yang belum disentuh pengguna.
+    const d = ctx.scan;
+    const touched = new Set();
+    const setPermitBtn = () => {
+      const pb = el.querySelector('[data-act^="permit"]');
+      if (pb) pb.outerHTML = permitBtn(f, d);
+    };
+    const watchUpload = () => {
+      if (!d || f.permitAsal) return;
+      tungguGambar(d).then((link) => {
+        d.gagal = false;
+        if (!f.permitAsal) f.permitAsal = link;
+        if (el.isConnected) setPermitBtn();
+      }).catch(() => {
+        d.gagal = true;
+        if (el.isConnected) setPermitBtn();
+      });
+    };
+    if (d) {
+      watchUpload();
+      if (!d.siap) {
+        d.baca.then(() => {
+          if (!el.isConnected) return;
+          if (d.ralat instanceof AuthError) ctx.fail(d.ralat);
+          let n = 0;
+          for (const k of d.keys) {
+            if (touched.has(k)) continue;
+            setField(k, d.fields[k]);
+            n++;
+          }
+          refresh();
+          $('#scan-msg').innerHTML = scanMsg(d);
+          const sama = d.match ? ` Mungkin sama dengan rekod ${d.match.r.id}, semak sebelum simpan.` : '';
+          toast(n ? `${n} medan diisi dari imbasan.${sama}` : `Teks tidak dapat dibaca dari gambar.${sama}`, n && !sama ? 'ok' : 'err');
+        });
+      }
+    }
+
     el.addEventListener('input', (e) => {
       const t = e.target.closest('[data-k]');
       if (!t) return;
@@ -361,12 +440,13 @@ export default {
       if (DATES.has(k)) f[k] = fromIso(v);
       else if (NUMS.has(k)) f[k] = numOrNull(v);
       else f[k] = v;
+      touched.add(k);
       unmark(k);
       refresh();
     });
     el.addEventListener('change', (e) => {
       const t = e.target.closest('select[data-k]');
-      if (t) { f[t.dataset.k] = t.value; unmark(t.dataset.k); refresh(); }
+      if (t) { f[t.dataset.k] = t.value; touched.add(t.dataset.k); unmark(t.dataset.k); refresh(); }
     });
 
     el.addEventListener('click', async (e) => {
@@ -380,6 +460,7 @@ export default {
       const tp = e.target.closest('[data-tempoh]');
       if (tp) {
         unmark('tempoh');
+        touched.add('tempoh');
         f.tempoh = tp.dataset.tempoh;
         if (f.tempoh !== SEKALI && !f.tamat) {
           const start = f.mula || today();
@@ -395,6 +476,7 @@ export default {
         const k = box.dataset.stepper;
         const min = k === 'kuantiti' ? 1 : 0;
         SCAN.delete(k);
+        touched.add(k);
         f[k] = Math.max(min, Number(f[k] || 0) + Number(st.dataset.step));
         box.querySelector('.st-v').textContent = f[k];
         box.classList.toggle('on', f[k] > 0);
@@ -407,6 +489,8 @@ export default {
         const p = per.dataset.per;
         f.tamat = p.endsWith('d') ? addDays(start, Number(p.slice(0, -1)) - 1) : addDays(addMonths(start, Number(p.slice(0, -1))), -1);
         $('#f-tamat').value = isoDate(f.tamat);
+        touched.add('tamat');
+        unmark('tamat');
         refresh();
         return;
       }
@@ -447,11 +531,15 @@ export default {
             const res = await scanPermit(src && mode === 'sunting' ? src.id : f.nama || 'Permit baru');
             if (!res) return;
             f.permitAsal = res.link;
-            const pb = el.querySelector('[data-act="permit"]');
-            pb.className = 'fbtn done';
-            pb.innerHTML = `${I.check}<span>Permit asal disimpan</span>`;
+            setPermitBtn();
             const num = await confirmNumber(res.candidates, f.noPermit);
             if (num) { f.noPermit = num; $('#f-noPermit').value = num; }
+          } else if (act === 'permit-ulang') {
+            await ctx.ensureAuth();
+            d.gagal = false;
+            setPermitBtn();
+            simpanGambar(d);
+            watchUpload();
           } else if (act === 'permit' || act === 'gambar') {
             await ctx.ensureAuth();
             const file = await pickFile();
@@ -490,6 +578,22 @@ export default {
         if (first) first.focus();
         toast(errs[0][1], 'err');
         return;
+      }
+      // Gambar imbasan masih dimuat naik: tunggu supaya pautan Permit Asal ikut disimpan.
+      if (d && !f.permitAsal && !d.abaiGambar) {
+        busy(btn, true, 'Menunggu gambar permit disimpan…');
+        try {
+          f.permitAsal = await tungguGambar(d);
+          setPermitBtn();
+        } catch {
+          d.gagal = true;
+          d.abaiGambar = true;
+          setPermitBtn();
+          busy(btn, false);
+          toast('Gambar permit gagal disimpan. Tekan butang gambar untuk cuba lagi, atau tekan Simpan sekali lagi untuk simpan tanpa gambar.', 'err');
+          return;
+        }
+        busy(btn, false);
       }
       const data = {};
       for (const k of INPUT_KEYS) {

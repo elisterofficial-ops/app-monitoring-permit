@@ -10,29 +10,60 @@ export const draft = { v: null };
 
 const opts = () => ({ jenis: state.tetapan.jenis.map((j) => j.jenis), kawasan: state.tetapan.kawasan });
 
-// Imbas permit: simpan gambar sebagai Permit Asal, baca teks dan isi medan.
-// step(teks) dipanggil untuk kemas kini teks butang semasa proses.
+// Saiz gambar imbasan: cukup jelas untuk OCR, kecil supaya cepat dihantar dengan data telefon.
+const IMBAS_MAX = 2000;
+const IMBAS_Q = 0.8;
+
+// Imbas permit. Pulangkan draf sebaik gambar siap disediakan; bacaan teks berjalan dalam d.baca
+// (Promise yang tidak pernah gagal). Gambar Permit Asal dimuat naik di belakang selepas teks dibaca,
+// supaya borang boleh dibuka tanpa menunggu muat naik itu.
 export async function imbasPermit({ capture = true, step = () => {} } = {}) {
   const file = await pickFile({ capture });
   if (!file) return null;
   step('Menyediakan gambar…');
-  const blob = await compressImage(file);
-  step('Membaca teks permit…');
-  let text = '';
-  try { text = await ocrText(blob, 'permit'); } catch (e) { if (e instanceof AuthError) throw e; text = ''; }
-  const { fields, calon, info } = parseDokumen(text, opts());
-  step('Menyimpan gambar permit…');
-  const label = fields.nama || 'Permit baru';
-  const up = await uploadPhoto(blob, `${label} - permit asal ${isoDate(today())}.jpg`);
+  const blob = await compressImage(file, IMBAS_MAX, IMBAS_Q);
   const d = {
-    fields, calon, info, text,
-    keys: Object.keys(fields),
-    permitAsal: up.webViewLink,
-    thumb: URL.createObjectURL(blob),
-    match: findMatch(fields, state.records),
+    fields: {}, calon: [], info: {}, text: '', keys: [], match: null, permitAsal: '', siap: false, ralat: null,
+    blob, thumb: URL.createObjectURL(blob), t0: Date.now(), masa: {}, simpan: null,
   };
   draft.v = d;
+  d.baca = (async () => {
+    const t = Date.now();
+    try { d.text = await ocrText(blob, 'permit'); } catch (e) { d.ralat = e; d.text = ''; }
+    d.masa.baca = Date.now() - t;
+    try {
+      const p = parseDokumen(d.text, opts());
+      d.fields = p.fields;
+      d.calon = p.calon;
+      d.info = p.info;
+    } catch (e) { console.error(e); }
+    d.keys = Object.keys(d.fields);
+    d.match = findMatch(d.fields, state.records);
+    d.siap = true;
+    if (!(d.ralat instanceof AuthError)) simpanGambar(d);
+    return d;
+  })();
   return d;
+}
+
+// Muat naik gambar imbasan sebagai Permit Asal (di belakang). Boleh dipanggil semula jika gagal.
+export function simpanGambar(d) {
+  const t = Date.now();
+  const nama = `${d.fields.nama || 'Permit baru'} - permit asal ${isoDate(today())}.jpg`;
+  d.simpan = uploadPhoto(d.blob, nama).then((up) => {
+    d.permitAsal = up.webViewLink;
+    d.masa.simpan = Date.now() - t;
+    return up.webViewLink;
+  });
+  d.simpan.catch(() => {});
+  return d.simpan;
+}
+
+// Tunggu gambar Permit Asal siap disimpan (termasuk jika bacaan teks belum selesai).
+export async function tungguGambar(d) {
+  await d.baca;
+  if (!d.simpan) throw new Error('Gambar permit belum disimpan.');
+  return d.simpan;
 }
 
 // Imbas resit: tidak disimpan, hanya teks dibaca untuk jumlah, No. resit dan tarikh bayar.
@@ -40,7 +71,7 @@ export async function imbasResit({ capture = true, step = () => {} } = {}) {
   const file = await pickFile({ capture });
   if (!file) return null;
   step('Membaca resit…');
-  const blob = await compressImage(file);
+  const blob = await compressImage(file, IMBAS_MAX, IMBAS_Q);
   const text = await ocrText(blob, 'resit');
   return parseResit(text).fields;
 }

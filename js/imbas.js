@@ -156,13 +156,22 @@ function alamatOf(lines) {
   return `${l1}\n${l2}`;
 }
 
-// Blok penerima: baris selepas "Ruj. Kami" (atau "Kepada") hingga "Tuan," / "Puan,".
+// Baris yang menamatkan blok penerima bila dibaca ke atas dari "Tuan," / "Puan,":
+// nombor rujukan surat, tarikh, kepala surat majlis atau maklumat hubungan.
+const ATAS = /\b[rk]?uj\.?\s*(kami|tuan)|rujukan|M\s?D\s?S\s*\/|tarikh\s*:|^\s*date\b|kepada\s*:?\s*$|majlis\s+daerah|jalan\s+bunga\s+tanjung|\be-?m(?:ai|e)l\b|laman\s*web|https?:|www\.|\btel\b|faks|fax/i;
+
+// Blok penerima: baris sebelum "Tuan," / "Puan,", dibaca ke atas hingga baris rujukan, tarikh atau kepala surat.
+// Tidak bergantung pada "Ruj. Kami" kerana OCR kadang-kadang tersilap baca huruf pertamanya.
 function penerima(lines) {
-  let s = lines.findIndex((l) => /^\s*ruj/i.test(l) || /\bruj\.?\s*(kami|tuan)/i.test(l));
-  if (s < 0) s = lines.findIndex((l) => /^\s*kepada\b/i.test(l));
-  const e = lines.findIndex((l, i) => i > s && SALAM.test(l));
-  if (s < 0 || e < 0 || e - s > 14) return null;
-  const blok = lines.slice(s + 1, e).map(cleanLine).filter((l) => l && !BISING.test(l) && !/^kepada$/i.test(l));
+  const e = lines.findIndex((l) => SALAM.test(l));
+  if (e < 1) return null;
+  const blok = [];
+  for (let i = e - 1; i >= 0 && blok.length < 8; i--) {
+    const l = cleanLine(lines[i]);
+    if (!l) continue;
+    if (ATAS.test(l)) break;
+    blok.unshift(l);
+  }
   if (!blok.length) return null;
   const syarikat = (s) => s.replace(/\bSdn\.?\s*Bhd\.?/i, 'Sdn Bhd').replace(/[.,]+$/, '');
   const c = blok.findIndex((l) => SYARIKAT.test(l));
@@ -290,8 +299,10 @@ export function parseBil(text, opts = {}) {
   }
 
   // Keterangan akaun: dari "PARTICULARS OF ACCOUNT" hingga "Ruj. Kami" (tarikh surat selepas Ruj bukan tarikh permit).
-  const pm = t.match(/PARTICULARS\s+OF\s+ACCOUNT\s*([\s\S]*?)(?=Ruj\.?\s*Kami|Sila\s+Jelaskan|\n\s*:|AMAUN|$)/i);
-  const part = pm ? pm[1].replace(/\s+/g, ' ').trim() : '';
+  const pm = t.match(/PARTICULARS\s+OF\s+ACCOUNT\s*([\s\S]*?)(?=[RK]?uj\.?\s*Kami|Sila\s+Jelaskan|\n\s*:|AMAUN|$)/i);
+  // Label kotak bil kadang-kadang dibaca di tengah keterangan; buang baris label itu.
+  const LABEL = /^\s*(no\.?\s*bil|bill\s*no|tarikh\s*bil|bill\s*date|kod\s*akaun|account\s*code|bil\s*rujukan|bill\s*reference|department)\b.*$/gim;
+  const part = pm ? pm[1].replace(LABEL, '').replace(/\s+/g, ' ').trim() : '';
   if (part) info.keterangan = part;
 
   const jenis = jenisOf(part, part, opts.jenis || []);

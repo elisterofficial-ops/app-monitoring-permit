@@ -643,14 +643,30 @@ async function folder(keyword, name) {
 }
 
 // Kecilkan gambar sebelum dimuat naik (data telefon lebih jimat, OCR masih jelas).
+// Jika createImageBitmap gagal (gambar kamera yang sangat besar pada sesetengah telefon), cuba melalui <img>,
+// supaya gambar asal berbilang MB tidak dihantar.
+function loadImg(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Gambar tidak dapat dibuka.')); };
+    img.src = url;
+  });
+}
+
 export async function compressImage(file, max = 2000, q = 0.86) {
+  let src;
+  try { src = await createImageBitmap(file); } catch { try { src = await loadImg(file); } catch { return file; } }
   try {
-    const bmp = await createImageBitmap(file);
-    const sc = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const w = src.width || src.naturalWidth;
+    const h = src.height || src.naturalHeight;
+    const sc = Math.min(1, max / Math.max(w, h));
     const c = document.createElement('canvas');
-    c.width = Math.round(bmp.width * sc);
-    c.height = Math.round(bmp.height * sc);
-    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    c.width = Math.round(w * sc);
+    c.height = Math.round(h * sc);
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    if (src.close) src.close();
     const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', q));
     return blob || file;
   } catch {

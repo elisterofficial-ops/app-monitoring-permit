@@ -240,6 +240,9 @@ button { font: inherit; color: inherit; }
 .fbtn.dashed { border: 1.5px dashed rgba(34, 211, 238, .5); background: rgba(34, 211, 238, .05); }
 .fbtn.done { border-color: rgba(52, 211, 153, .5); }
 .fbtn.done .ic { color: var(--green); }
+.fbtn.wait { border-color: rgba(34, 211, 238, .35); color: var(--soft); cursor: default; }
+.fbtn.wait .spin { width: 14px; height: 14px; flex: none; color: var(--cyan); }
+.scanbar .spin { width: 12px; height: 12px; vertical-align: -1px; margin-right: 4px; color: var(--cyan); }
 
 .note { padding: 14px 16px; border-radius: 22px; display: flex; flex-direction: column; gap: 10px; }
 .note.warn { background: rgba(251, 191, 36, .07); border: 1px solid rgba(251, 191, 36, .4); }
