@@ -1,6 +1,6 @@
 import { I } from '../icons.js';
 import { esc, fmtRM, fmtLong, fmtShort, today, greet, scase, tcase, timeAgo, dayName } from '../util.js';
-import { state, counts, perhatian, hasil, suratDue, suratUpcoming, canEdit } from '../store.js';
+import { state, counts, perhatian, hasil, suratDue, suratTamat, suratUpcoming, canEdit } from '../store.js';
 import { initials } from '../ui.js';
 import { isStandalone, isIOS, isAndroid } from '../install.js';
 
@@ -55,7 +55,7 @@ export default {
     const c = counts();
     const list = perhatian();
     const jenisAktif = new Set([...h.byJenis.keys()]).size;
-    const due = suratDue().length;
+    const due = suratDue().length + suratTamat().length;
     const up = suratUpcoming();
     let banner = '';
     if (up.length) {

@@ -487,6 +487,17 @@ export function suratDue() {
     .sort((a, b) => (a.baki ?? 0) - (b.baki ?? 0));
 }
 
+// Permit tahunan yang tarikhnya sudah lepas: surat guna templat kedua ("telah tamat tempoh") dengan tarikh akhir sendiri.
+export const suratLewat = (r) => r.tempoh === 'TAHUNAN' && r.baki != null && r.baki < 0;
+
+// Sudah tamat, belum diperbaharui, dan belum ada surat sejak tarikh tamat. Yang baru tamat di atas.
+export function suratTamat() {
+  return state.records
+    .filter((r) => r.tempoh === 'TAHUNAN' && r.status === 'TAMAT' && r.tamat
+      && !state.surat.some((s) => s.id === r.id && s.tarikh && s.tarikh > r.tamat))
+    .sort((a, b) => b.tamat - a.tamat);
+}
+
 export function suratUpcoming(days = 90) {
   const w = warnDays();
   return state.records
@@ -500,9 +511,14 @@ export function missingForSurat(r) {
   if (!r.pengurus) m.push('Nama pengurus premis');
   if (!r.alamat) m.push('Alamat');
   if (!r.noPermit) m.push('No. permit');
+  if (!r.kawasan && !r.kedudukan) m.push('Kawasan');
   if (!r.tamat) m.push('Tarikh tamat');
   return m;
 }
+
+// Ruang yang boleh dibiarkan bertitik dalam surat, untuk diisi tangan atau dalam Docs.
+const BOLEH_KOSONG = ['NAMA_PENGURUS', 'ALAMAT_1', 'NO_PERMIT', 'KAWASAN'];
+const TITIK = '.'.repeat(30);
 
 export function splitAlamat(a) {
   const s = String(a || '').trim();
@@ -524,6 +540,7 @@ export function namaSurat(jenis) {
 export function suratValues(r, ruj) {
   const t = today();
   const nama = namaSurat(r.jenis);
+  const akhir = addDays(t, toNum(setting('tempoh jawab')) || 14);
   const [a1, a2] = splitAlamat(r.alamat);
   return {
     RUJ_KAMI: ruj || '',
@@ -535,10 +552,12 @@ export function suratValues(r, ruj) {
     JENIS_PERMIT: nama,
     TAHUN: r.tamat ? String(addDays(r.tamat, 1).getUTCFullYear()) : '',
     NAMA_PERMIT: nama.toLowerCase(),
-    KAWASAN: r.kawasan,
+    KAWASAN: r.kawasan || r.kedudukan,
     NO_PERMIT: r.noPermit,
     TARIKH_TAMAT: fmtLong(r.tamat),
     HARI_TAMAT: dayName(r.tamat),
+    TARIKH_AKHIR: fmtLong(akhir),
+    HARI_AKHIR: dayName(akhir),
     NAMA_PENANDATANGAN: str(setting('penandatangan surat')).toUpperCase(),
     JAWATAN_PENANDATANGAN: str(setting('jawatan')),
   };
@@ -715,16 +734,18 @@ export async function ocrPermit(blob) {
 }
 
 export async function janaSurat(r, ruj) {
-  const nama = `Surat peringatan ${r.id} ${r.nama}`.slice(0, 120);
+  const lewat = suratLewat(r);
+  const nama = `${lewat ? 'Surat permit tamat' : 'Surat peringatan'} ${r.id} ${r.nama}`.slice(0, 120);
   if (state.demo) {
     state.surat.push({ tarikh: today(), id: r.id, nama: r.nama, jenis: r.jenis, tamat: r.tamat, ruj, doc: '#', pdf: '#', oleh: state.user.email });
     return { doc: '#', pdf: '#', pdfBlob: null, nama };
   }
-  const tpl = str(setting('template surat'));
-  if (!tpl) throw new Error('ID templat surat belum diisi dalam TETAPAN ("Template surat (ID)").');
+  const tpl = str(setting(lewat ? 'template permit tamat' : 'template surat'));
+  if (!tpl) throw new Error(`ID templat surat belum diisi dalam TETAPAN ("${lewat ? 'Template permit tamat (ID)' : 'Template surat (ID)'}").`);
   const parent = await folder('folder surat', 'APP Monitoring Permit - Surat');
   const copy = await drive.copy(tpl, nama, parent);
   const vals = suratValues(r, ruj);
+  for (const k of BOLEH_KOSONG) if (!vals[k]) vals[k] = TITIK;
   const requests = [];
   for (const [k, v] of Object.entries(vals)) {
     for (const t of new Set([`{{${k}}}`, `{{${k.replace(/_/g, '\\_')}}}`])) {
