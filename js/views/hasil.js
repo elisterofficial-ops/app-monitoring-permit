@@ -3,6 +3,24 @@ import { years, hasil } from '../store.js';
 
 const PALETTE = ['#22d3ee', '#a78bfa', '#34d399', '#fbbf24', '#fb7185', '#60a5fa', '#f472b6', '#a3e635', '#94a3b8'];
 
+const unitName = (u) => tcase(u.replace(/^UNIT\s+/i, ''));
+const desc = (a, b) => b[1] - a[1];
+
+// Senarai jenis permit di bawah sesuatu unit.
+const jenisRows = (map) => [...map.entries()].filter(([, v]) => v > 0).sort(desc)
+  .map(([j, v]) => `<div class="pj"><span>${esc(scase(j))}</span><span class="mono">${esc(fmtRM(v))}</span></div>`).join('');
+
+// Satu bulan: jumlah, kemudian setiap unit dan jenis permitnya.
+function bulanRow(h, i, buka) {
+  const v = h.months[i];
+  if (!v) return `<div class="drow"><span class="dl">${BULAN[i]}</span><span class="dv mono">-</span></div>`;
+  const units = [...h.monthUnit[i].entries()].sort((a, b) => b[1].total - a[1].total);
+  return `<details class="pb" data-pb="${i}"${buka ? ' open' : ''}>
+    <summary><span>${BULAN[i]}</span><span class="mono">${esc(fmtRM(v))}</span></summary>
+    ${units.map(([u, x]) => `<div class="pu"><div class="pu-h"><span>${esc(unitName(u))}</span><b class="mono">${esc(fmtRM(x.total))}</b></div>${jenisRows(x.jenis)}</div>`).join('')}
+  </details>`;
+}
+
 export default {
   nav: 'hasil',
   render(ctx) {
@@ -24,8 +42,8 @@ export default {
         <span class="${cls}${i === curMonth ? ' now' : ''}" style="height:${hgt.toFixed(0)}px"></span>
       </button>`;
     }).join('');
-    const units = [...h.byUnit.entries()].sort((a, b) => b[1] - a[1]);
-    const jenis = [...h.byJenis.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    const units = [...h.byUnit.entries()].sort(desc);
+    const jenis = [...h.byJenis.entries()].filter(([, v]) => v > 0).sort(desc);
     return `<div class="page">
       <div class="top">
         <div><div class="sub">Semua unit Bahagian Penguatkuasa</div><h1 class="h1">Kutipan hasil</h1></div>
@@ -42,10 +60,12 @@ export default {
 
       <section class="card">
         <h2 class="h2">Ikut unit</h2>
-        <div class="ulist">${units.map(([u, v]) => `<div>
-          <div class="urow"><span>${esc(tcase(u.replace(/^UNIT\s+/i, '')))}</span><b class="mono${v ? '' : ' muted'}">${esc(fmtRM(v))}</b></div>
-          <div class="ubar"><div style="width:${h.total ? ((v / h.total) * 100).toFixed(1) : 0}%"></div></div>
-        </div>`).join('')}</div>
+        <div class="ulist">${units.map(([u, v]) => {
+          const bar = `<div class="ubar"><div style="width:${h.total ? ((v / h.total) * 100).toFixed(1) : 0}%"></div></div>`;
+          if (!v) return `<div><div class="urow"><span>${esc(unitName(u))}</span><b class="mono muted">${esc(fmtRM(v))}</b></div>${bar}</div>`;
+          return `<details class="ud"><summary><div class="urow"><span>${esc(unitName(u))}</span><b class="mono">${esc(fmtRM(v))}</b></div>${bar}</summary>
+            <div class="pu">${jenisRows(h.unitJenis.get(u) || new Map())}</div></details>`;
+        }).join('')}</div>
       </section>
 
       <section class="card">
@@ -62,9 +82,10 @@ export default {
         <div class="tile2 violet"><div class="tile-n">${esc(fmtRM(avg, 0))}</div><div class="sub2">${span > 0 ? `Purata sebulan, ${BULAN_PENDEK[0]} hingga ${BULAN_PENDEK[lastData]}` : 'Purata sebulan'}</div></div>
       </div>
 
-      <details class="card more-card"><summary>Jumlah setiap bulan</summary>
-        ${h.months.map((v, i) => `<div class="drow"><span class="dl">${BULAN[i]}</span><span class="dv mono">${v ? esc(fmtRM(v)) : '-'}</span></div>`).join('')}
-      </details>
+      <section class="card" id="pecahan">
+        <div><h2 class="h2">Pecahan setiap bulan</h2><div class="sub">Tekan bulan untuk lihat hasil setiap unit dan jenis permit.</div></div>
+        <div>${h.months.map((v, i) => bulanRow(h, i, i === (curMonth >= 0 && h.months[curMonth] ? curMonth : lastData))).join('')}</div>
+      </section>
     </div>`;
   },
   bind(el, ctx) {
@@ -78,6 +99,8 @@ export default {
       const i = Number(b.dataset.m);
       el.querySelectorAll('.bcol').forEach((x) => x.classList.toggle('sel', x === b));
       el.querySelector('#mline').textContent = `${BULAN[i]} ${y}: ${fmtRM(h.months[i])}`;
+      // Buka pecahan bulan yang ditekan pada carta.
+      el.querySelectorAll('[data-pb]').forEach((x) => { x.open = Number(x.dataset.pb) === i; });
     });
   },
 };

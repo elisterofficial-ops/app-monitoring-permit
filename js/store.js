@@ -374,6 +374,8 @@ export function hasil(year) {
   const months = Array(12).fill(0);
   const byUnit = new Map(state.tetapan.units.map((u) => [u, 0]));
   const byJenis = new Map();
+  const unitJenis = new Map(); // unit -> Map(jenis -> jumlah setahun)
+  const monthUnit = Array.from({ length: 12 }, () => new Map()); // bulan -> Map(unit -> { total, jenis: Map })
   let total = 0;
   let count = 0;
   for (const r of state.records) {
@@ -385,8 +387,16 @@ export function hasil(year) {
     const u = r.unit || (jenisInfo(r.jenis) || {}).unit || 'Lain-lain';
     byUnit.set(u, (byUnit.get(u) || 0) + v);
     byJenis.set(r.jenis, (byJenis.get(r.jenis) || 0) + v);
+    const uj = unitJenis.get(u) || new Map();
+    uj.set(r.jenis, (uj.get(r.jenis) || 0) + v);
+    unitJenis.set(u, uj);
+    const bulan = monthUnit[r.tarikhBayar.getUTCMonth()];
+    const mu = bulan.get(u) || { total: 0, jenis: new Map() };
+    mu.total += v;
+    mu.jenis.set(r.jenis, (mu.jenis.get(r.jenis) || 0) + v);
+    bulan.set(u, mu);
   }
-  return { months, byUnit, byJenis, total, count };
+  return { months, byUnit, byJenis, unitJenis, monthUnit, total, count };
 }
 
 export function chain(r) {

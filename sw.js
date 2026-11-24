@@ -1,7 +1,7 @@
 // Service worker: simpan kod app supaya boleh dibuka tanpa internet.
 // Kod sentiasa diambil dari rangkaian dahulu (versi terbaru), simpanan hanya bila luar talian.
 // Data permit (Google API) tidak pernah disimpan di sini.
-const VERSION = 'amp-1.1.5';
+const VERSION = 'amp-1.2.0';
 const FONTS = 'amp-fonts';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
