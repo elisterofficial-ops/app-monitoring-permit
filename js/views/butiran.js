@@ -9,11 +9,12 @@ const clsOf = (s) => ({ 'SAH': 'ok', 'AKAN TAMAT': 'warn', 'TAMAT': 'bad' }[s] |
 
 function waText(r) {
   const lines = [
-    `*${scase(r.jenis)}* · ${tempohLabel(r.tempoh)}`,
+    `*${scase(r.jenis)}* · ${r.status === 'REKOD' ? 'Rekod' : tempohLabel(r.tempoh)}`,
     r.nama,
     `ID rekod: ${r.id}${r.noPermit ? ` · No. permit: ${r.noPermit}` : ''}`,
     r.kawasan ? `Kawasan: ${tcase(r.kawasan)}${r.kedudukan ? `, ${r.kedudukan}` : ''}` : '',
-    r.mula && r.tamat ? `Tempoh: ${fmtDate(r.mula)} hingga ${fmtDate(r.tamat)}` : r.mula && r.tempoh === 'SEKALI BAYAR' ? `Sekali bayar sejak ${fmtDate(r.mula)}, tiada tarikh tamat` : '',
+    r.status === 'REKOD' ? (r.mula ? `Tarikh: ${fmtDate(r.mula)}` : '')
+      : r.mula && r.tamat ? `Tempoh: ${fmtDate(r.mula)} hingga ${fmtDate(r.tamat)}` : r.mula && r.tempoh === 'SEKALI BAYAR' ? `Sekali bayar sejak ${fmtDate(r.mula)}, tiada tarikh tamat` : '',
     `Status: ${r.status}${r.baki != null && r.baki >= 0 && (r.status === 'SAH' || r.status === 'AKAN TAMAT') ? ` (${r.baki} hari lagi)` : ''}`,
     r.koordinat ? `Lokasi: ${mapsUrl(r.koordinat)}` : '',
   ];
@@ -29,7 +30,9 @@ function hero(r) {
   const col = COLOR[cls];
   let big = '';
   let line = '';
-  if (r.tempoh === 'SEKALI BAYAR' && r.status === 'SAH') {
+  if (r.status === 'REKOD') {
+    line = `Rekod sahaja${r.mula ? ` · ${esc(fmtLong(r.mula))}` : ''}`;
+  } else if (r.tempoh === 'SEKALI BAYAR' && r.status === 'SAH') {
     line = `Sekali bayar${r.mula ? ` pada ${esc(fmtLong(r.mula))}` : ''} · tiada tarikh tamat`;
   } else if (r.status === 'SAH' || r.status === 'AKAN TAMAT') {
     big = String(r.baki);
@@ -57,7 +60,7 @@ function hero(r) {
   return `<section class="phero ${cls}">
     <div class="phero-top">
       <div><div class="phero-name">${esc(r.nama)}</div>
-        <div class="tags"><span class="tag">${esc(scase(r.jenis))}</span><span class="tag">${tempohLabel(r.tempoh)}</span></div></div>
+        <div class="tags"><span class="tag">${esc(scase(r.jenis))}</span><span class="tag">${r.status === 'REKOD' ? 'Rekod sahaja' : tempohLabel(r.tempoh)}</span></div></div>
       ${badge(r.status)}
     </div>
     ${big ? `<div class="phero-big"><span class="num" style="color:${col}">${big}</span><span>${esc(line)}</span></div>` : `<div class="sub">${line}</div>`}
@@ -79,8 +82,8 @@ export default {
       : '<span class="muted">Belum diisi</span>';
     const jumlah = r.jumlah != null ? `<b class="mono">${esc(fmtRM(r.jumlah))}</b>` : `<span class="muted">Kadar ${esc(scase(r.jenis))} belum ditetapkan</span>`;
     const actions = [];
-    if (edit && r.tempoh !== 'SEKALI BAYAR') actions.push(`<a class="act primary" href="#/baharui/${encodeURIComponent(r.id)}">${I.renew}Baharui</a>`);
-    if (r.tempoh === 'TAHUNAN') actions.push(`<a class="act violet" href="#/surat?id=${encodeURIComponent(r.id)}">${I.mail}Surat</a>`);
+    if (edit && r.tempoh !== 'SEKALI BAYAR' && r.status !== 'REKOD') actions.push(`<a class="act primary" href="#/baharui/${encodeURIComponent(r.id)}">${I.renew}Baharui</a>`);
+    if (r.tempoh === 'TAHUNAN' && r.status !== 'REKOD') actions.push(`<a class="act violet" href="#/surat?id=${encodeURIComponent(r.id)}">${I.mail}Surat</a>`);
     actions.push(`<a class="act green" href="https://wa.me/${waNumber(r.telefon)}?text=${encodeURIComponent(waText(r))}" target="_blank" rel="noopener">${I.wa}WhatsApp</a>`);
     if (r.koordinat) actions.push(`<a class="act" href="${esc(mapsUrl(r.koordinat))}" target="_blank" rel="noopener">${I.pin}Peta</a>`);
     else if (edit) actions.push(`<button type="button" class="act" data-act="lokasi">${I.locate}Tanda lokasi</button>`);

@@ -172,6 +172,7 @@ function computeDerived(r) {
   const t = today();
   r.baki = r.tamat ? diffDays(t, r.tamat) : null;
   if (state.renewals.has(r.id)) r.status = 'DIPERBAHARUI';
+  else if (isRekod(r.jenis)) r.status = 'REKOD';
   else if (r.tempoh === 'SEKALI BAYAR') r.status = 'SAH';
   else if (!r.tamat) r.status = 'TIADA TARIKH';
   else if (r.tempoh === 'BERMUSIM') r.status = r.baki >= 0 ? 'SAH' : 'SELESAI';
@@ -265,6 +266,9 @@ export function setting(key) {
 }
 
 export const jenisInfo = (j) => state.tetapan.jenis.find((x) => x.jenis === String(j || '').toUpperCase());
+
+// Jenis untuk rekod hasil sahaja (Asas Kadar REKOD dalam TETAPAN, contoh LPKP): tiada tarikh tamat dan tiada surat.
+export const isRekod = (j) => (jenisInfo(j) || {}).asasKadar === 'REKOD';
 
 function resolveRole(email) {
   const e = String(email || '').toLowerCase();

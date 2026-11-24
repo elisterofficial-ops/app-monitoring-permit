@@ -10,6 +10,7 @@ const FILTERS = [
   ['AKAN TAMAT', 'Akan tamat', 'warn'],
   ['TAMAT', 'Tamat', 'bad'],
   ['BERMUSIM', 'Bermusim', ''],
+  ['REKOD', 'Rekod', ''],
 ];
 
 function match(r, f) {

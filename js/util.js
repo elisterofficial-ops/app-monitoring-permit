@@ -94,7 +94,7 @@ export const tcase = (s) =>
 
 export function scase(s) {
   const t = String(s || '').toLowerCase();
-  return t.charAt(0).toUpperCase() + t.slice(1);
+  return (t.charAt(0).toUpperCase() + t.slice(1)).replace(/lpkp/i, 'LPKP');
 }
 
 export const STATUS = {
@@ -104,6 +104,7 @@ export const STATUS = {
   'DIPERBAHARUI': { cls: 'mute', label: 'Diperbaharui' },
   'SELESAI': { cls: 'mute', label: 'Selesai' },
   'TIADA TARIKH': { cls: 'mute', label: 'Tiada tarikh' },
+  'REKOD': { cls: 'mute', label: 'Rekod' },
 };
 
 export const statusCls = (s) => (STATUS[s] ? STATUS[s].cls : 'mute');

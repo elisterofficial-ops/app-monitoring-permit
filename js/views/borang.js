@@ -4,7 +4,7 @@ import {
   esc, fmtDate, fmtRM, isoDate, fromIso, today, addDays, diffDays, numOrNull, tcase, scase, norm, debounce, SEKALI, TEMPOH, tempohLabel,
 } from '../util.js';
 import {
-  state, jenisInfo, anggaran, addRecord, updateRecord, frequent, shortName, addMonths, INPUT_KEYS,
+  state, jenisInfo, isRekod, anggaran, addRecord, updateRecord, frequent, shortName, addMonths, INPUT_KEYS,
   compressImage, uploadPhoto,
 } from '../store.js';
 import { header, empty, stepper, toast, busy, pickFile, getLocation, openSheet } from '../ui.js';
@@ -352,24 +352,49 @@ export default {
     const orig = mode === 'sunting' && src ? fromExisting(src) : null;
 
     const $ = (s) => el.querySelector(s);
+    const touched = new Set(); // medan yang diisi sendiri oleh pengguna
+    let autoSekali = false;
+    let autoBayar = false;
+    const setBayar = (v) => { f.dibayar = v; $('#f-dibayar').value = v ?? ''; };
+    // Jenis rekod sahaja sentiasa sekali bayar tanpa tarikh tamat; bila bertukar ke jenis lain, pulihkan Tahunan.
+    const ikutJenis = (rekod) => {
+      if (rekod && f.tempoh !== SEKALI) { f.tempoh = SEKALI; f.tamat = null; autoSekali = true; }
+      else if (!rekod && autoSekali) {
+        autoSekali = false;
+        f.tempoh = 'TAHUNAN';
+        f.tamat = addDays(addMonths(f.mula || today(), 12), -1);
+        $('#f-tamat').value = isoDate(f.tamat);
+      }
+      if (!rekod && autoBayar) { autoBayar = false; setBayar(null); }
+    };
     const refresh = () => {
+      const rekod = isRekod(f.jenis);
+      ikutJenis(rekod);
       const bermusim = f.tempoh === 'BERMUSIM';
       const sekali = f.tempoh === SEKALI;
       el.querySelectorAll('.extra').forEach((x) => { x.hidden = !bermusim; });
       $('#tamat-fld').hidden = sekali;
       $('#per-chips').hidden = sekali;
       $('#sekali-note').hidden = !sekali;
+      $('#sekali-note').textContent = rekod ? 'Rekod sahaja: tiada tarikh tamat dan tiada surat peringatan.' : 'Sekali bayar: tiada tarikh tamat dan tiada surat peringatan.';
+      $('.seg').hidden = rekod;
+      el.querySelector('label[for="f-mula"]').firstChild.textContent = rekod ? 'Tarikh' : 'Tarikh mula';
       el.querySelectorAll('[data-tempoh]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.tempoh === f.tempoh)));
       const info = jenisInfo(f.jenis) || {};
       const lbl = el.querySelector('#st-qty .stepper-l');
       const kadar = f.kadarKhas || (bermusim ? info.kadarHarian : info.kadarStandard);
-      const asas = bermusim ? 'sehari' : String(info.asasKadar || '').toLowerCase();
+      const asas = bermusim ? 'sehari' : rekod ? '' : String(info.asasKadar || '').toLowerCase();
       lbl.innerHTML = `${esc(scase(info.unitKuantiti || 'Kuantiti'))}${kadar ? ` <span class="muted">· RM${esc(kadar)}${asas ? ` ${esc(asas)}` : ''}</span>` : ''}${tag('kuantiti')}`;
       const days = f.mula && f.tamat ? diffDays(f.mula, f.tamat) + 1 : 0;
       $('#tamat-l').textContent = days > 0 ? `Tarikh tamat · ${days} hari` : 'Tarikh tamat';
       const a = anggaran(f);
+      // Kadar tetap (contoh LPKP RM100): isi jumlah dibayar, selagi pengguna belum mengisinya sendiri.
+      if (rekod && a && mode === 'tambah' && !touched.has('dibayar') && !SCAN.has('dibayar') && (autoBayar || f.dibayar == null)) {
+        autoBayar = true;
+        setBayar(a.total);
+      }
       $('#amt').textContent = a ? fmtRM(a.total) : '-';
-      $('#ket').textContent = a ? a.ket : (f.jenis ? `Kadar ${scase(f.jenis)} belum ditetapkan dalam TETAPAN` : 'Pilih jenis permit');
+      $('#ket').textContent = a ? a.ket : (rekod ? 'Isi jumlah dibayar di atas' : f.jenis ? `Kadar ${scase(f.jenis)} belum ditetapkan dalam TETAPAN` : 'Pilih jenis permit');
       $('#use-amt').hidden = !a || f.dibayar === a.total;
       $('#use-amt').dataset.v = a ? a.total : '';
     };
@@ -411,7 +436,6 @@ export default {
     // Imbasan yang masih berjalan: gambar disimpan di belakang, dan teks yang lewat mengisi
     // medan yang belum disentuh pengguna.
     const d = ctx.scan;
-    const touched = new Set();
     const setPermitBtn = () => {
       const pb = el.querySelector('[data-act^="permit"]');
       if (pb) pb.outerHTML = permitBtn(f, d);

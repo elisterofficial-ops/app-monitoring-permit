@@ -65,7 +65,8 @@ export function empty(title, text = '', action = '') {
 export function recordCard(r, { renewed } = {}) {
   const dim = r.status === 'DIPERBAHARUI' || r.status === 'SELESAI';
   let when = '';
-  if (r.tamat) {
+  if (r.status === 'REKOD') when = r.mula ? `Direkod ${fmtDate(r.mula)}` : '';
+  else if (r.tamat) {
     if (r.status === 'SAH' || r.status === 'AKAN TAMAT') when = `Tamat ${fmtDate(r.tamat)} · tinggal ${r.baki} hari`;
     else if (r.status === 'TAMAT') when = `Tamat ${fmtDate(r.tamat)} · ${Math.abs(r.baki)} hari lalu`;
     else when = `${r.status === 'SELESAI' ? 'Selesai' : 'Tamat'} ${fmtDate(r.tamat)}`;

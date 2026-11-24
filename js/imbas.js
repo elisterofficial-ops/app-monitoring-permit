@@ -89,6 +89,8 @@ function amount(text, words) {
 }
 
 const JENIS = [
+  [/\bLPKP\b|lembaga\s+pelesenan\s+kenderaan|pemeriksaan\s+lokaliti/i, 'LPKP'],
+  [/all\s*soul|jualan\s+bunga/i, 'JUALAN GERAI ALL SOUL DAY'],
   [/giant\s*banner/i, 'GIANT BANNER'],
   [/fish\s*tail|streamer/i, 'FISHTAIL'],
   [/banner|kain\s*rentang|bunting/i, 'BANNER'],
