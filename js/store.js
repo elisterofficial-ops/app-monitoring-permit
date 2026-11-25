@@ -320,7 +320,7 @@ export function loadCache() {
 // Pautan ketua: data lihat sahaja dari skrip Google. Surat tidak dihantar.
 async function loadKetua() {
   const j = await ambilDataKetua(state.ketua);
-  const raw = { d: j.d, t: j.t, s: [], user: { email: '', name: 'Ketua Jabatan', photo: '' }, ownerEmail: '', title: j.title || '', loadedAt: Date.now() };
+  const raw = { d: j.d, t: j.t, s: [], user: { email: '', name: 'Paparan lihat sahaja', photo: '' }, ownerEmail: '', title: j.title || '', loadedAt: Date.now() };
   applyRaw(raw);
   state.offline = false;
   saveCache(raw);

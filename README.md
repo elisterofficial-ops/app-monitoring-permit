@@ -18,7 +18,7 @@ Peranan diambil dari tab TETAPAN (lajur Emel Pengguna APP, Nama dan Peranan):
 
 Jika senarai emel kosong, semua orang yang ada akses ke Sheet dikira ADMIN.
 
-Ketua jabatan juga boleh melihat tanpa log masuk melalui **pautan ketua**. Data pautan ini datang dari skrip Google milik admin yang hanya membaca lajur terpilih (tiada alamat, telefon, nama pengurus, no. resit, catatan atau gambar). Admin menghidupkan, menukar atau mematikan pautan di skrin Profil. ID skrip dan kunci disimpan dalam TETAPAN, bukan dalam repo.
+Anggota ronda dan ketua boleh melihat tanpa log masuk melalui **pautan lihat sahaja**. Data pautan ini datang dari skrip Google milik admin yang hanya membaca lajur terpilih (tiada alamat, telefon, nama pengurus, no. resit, catatan atau gambar). Admin menghidupkan, menukar atau mematikan pautan di skrin Profil. ID skrip dan kunci disimpan dalam TETAPAN, bukan dalam repo.
 
 ## Tetapan
 

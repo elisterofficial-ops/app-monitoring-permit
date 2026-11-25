@@ -1,4 +1,4 @@
-// Pautan ketua: lihat sahaja, tanpa log masuk. Data datang dari skrip Google milik admin, bukan terus dari Sheet.
+// Pautan lihat sahaja untuk anggota ronda dan ketua, tanpa log masuk. Nama 'ketua' dalam alamat dan TETAPAN dikekalkan supaya pautan lama terus berfungsi. Data datang dari skrip Google milik admin, bukan terus dari Sheet.
 // Bentuk pautan: <app>/#/ketua/<ID skrip>/<kunci>. Bahagian selepas # tidak dihantar ke pelayan web.
 import { CONFIG } from './config.js';
 
@@ -52,7 +52,7 @@ export async function ambilDataKetua(k) {
       redirect: 'follow',
     });
   } catch {
-    const e = new Error('Tiada sambungan internet, atau pautan ketua sudah tidak berfungsi.');
+    const e = new Error('Tiada sambungan internet, atau pautan ini sudah tidak berfungsi.');
     e.offline = true;
     throw e;
   }

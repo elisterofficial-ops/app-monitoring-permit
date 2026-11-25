@@ -79,6 +79,7 @@ button { font: inherit; color: inherit; }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 4px 0; }
 .who { display: flex; align-items: center; gap: 12px; color: var(--text); min-width: 0; }
 .who > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.who-logo { flex: none; border-radius: 14px; }
 .hello { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .avatar {
   width: 44px; height: 44px; flex: none; border-radius: 50%; border: 1.5px solid var(--cyan);

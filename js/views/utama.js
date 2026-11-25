@@ -69,9 +69,9 @@ export default {
       ${state.offline ? `<div class="offline">Luar talian. Data dikemas kini ${esc(timeAgo(state.loadedAt))}.</div>` : ''}
       <div class="top">
         <a class="who" href="#/profil" aria-label="Profil dan tetapan">
-          <span class="avatar">${esc(initials(u.name, u.email))}</span>
+          ${state.ketua ? '<img class="who-logo" src="icons/icon-192.png" alt="" width="46" height="46">' : `<span class="avatar">${esc(initials(u.name, u.email))}</span>`}
           <span><span class="sub">${esc(`${dayName(today())}, ${fmtLong(today())}`)}</span>
-          <span class="hello">${esc(greet())}${first ? `, ${esc(first)}` : ''}</span></span>
+          <span class="hello">${state.ketua ? 'APP Monitoring Permit' : `${esc(greet())}${first ? `, ${esc(first)}` : ''}`}</span></span>
         </a>
         ${state.ketua ? '' : `<a class="icon-btn" href="#/surat" aria-label="Surat perlu dijana: ${due}">${I.bell}${due ? '<span class="dot"></span>' : ''}</a>`}
       </div>
