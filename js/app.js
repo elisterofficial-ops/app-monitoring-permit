@@ -4,6 +4,7 @@ import { hasToken, signIn, signOut, AuthError } from './google.js';
 import { state, load, loadCache, hasCache, canEdit } from './store.js';
 import { toast, openSheet, busy } from './ui.js';
 import { parseSheetId } from './util.js';
+import { parseKetua, ketuaTersimpan, simpanKetua, buangKetua, samaKetua, PautanError } from './ketua.js';
 import { loginView } from './views/login.js';
 import { installCard } from './install.js';
 import utama from './views/utama.js';
@@ -14,7 +15,8 @@ import hasil from './views/hasil.js';
 import surat from './views/surat.js';
 import profil from './views/profil.js';
 
-const VIEWS = { utama, cari, permit: butiran, tambah: borang, ulang: borang, baharui: borang, sunting: borang, hasil, surat, profil };
+// 'ketua' ialah Utama: alamat pautan ketua dikekalkan supaya ikon di skrin utama iPhone membawa pautan itu.
+const VIEWS = { utama, ketua: utama, cari, permit: butiran, tambah: borang, ulang: borang, baharui: borang, sunting: borang, hasil, surat, profil };
 const EDIT_ONLY = new Set(['tambah', 'ulang', 'baharui', 'sunting']);
 let app = document.getElementById('app');
 
@@ -46,10 +48,21 @@ function renderNav(active, hidden) {
     `<a href="#/${r}" class="nav-i${active === r ? ' on' : ''}"${active === r ? ' aria-current="page"' : ''}>${I[ic]}<span>${label}</span></a>`;
   nav.innerHTML = item('utama', 'home', 'Utama') + item('cari', 'search', 'Cari')
     + (canEdit() ? `<a href="#/tambah" class="nav-fab" aria-label="Tambah permit">${I.plus}</a>` : '')
-    + item('hasil', 'chart', 'Hasil') + item('surat', 'mail', 'Surat');
+    + item('hasil', 'chart', 'Hasil') + (state.ketua ? item('profil', 'user', 'Profil') : item('surat', 'mail', 'Surat'));
 }
 
 const go = (hash) => { location.hash = hash; };
+
+// Muat semula data. Jika pautan ketua sudah dimatikan, keluar terus dari paparan.
+async function muatSemula() {
+  try {
+    await load();
+  } catch (e) {
+    if (!(e instanceof PautanError)) throw e;
+    keluarKetua(e.message);
+    throw Object.assign(new Error(e.message), { cancelled: true });
+  }
+}
 
 function makeCtx(r) {
   return {
@@ -60,9 +73,10 @@ function makeCtx(r) {
     ensureAuth,
     readyNow,
     fail,
-    reload: () => load(),
+    reload: muatSemula,
     logout,
     switchSheet,
+    keluarKetua,
   };
 }
 
@@ -74,6 +88,10 @@ function route(keepScroll = false) {
     history.replaceState(null, '', '#/utama');
     r.name = 'utama';
   }
+  if (state.ketua && r.name === 'surat') {
+    history.replaceState(null, '', '#/utama');
+    r.name = 'utama';
+  }
   const view = VIEWS[r.name] || utama;
   const ctx = makeCtx(r);
   const y = window.scrollY;
@@ -81,7 +99,7 @@ function route(keepScroll = false) {
     const html = view.render(ctx);
     freshApp();
     app.innerHTML = html;
-    renderNav(view.nav || r.name, view.hideNav);
+    renderNav(state.ketua && r.name === 'profil' ? 'profil' : view.nav || r.name, view.hideNav);
     if (view.bind) view.bind(app, ctx);
   } catch (e) {
     console.error(e);
@@ -94,6 +112,8 @@ function route(keepScroll = false) {
 
 window.addEventListener('hashchange', () => {
   const h = location.hash;
+  const k = parseKetua(h);
+  if (k && !samaKetua(k, state.ketua)) { location.reload(); return; }
   if (stack.length > 1 && stack[stack.length - 2] === h) stack.pop();
   else stack.push(h);
   route();
@@ -176,7 +196,7 @@ function reconnect() {
 }
 
 async function ensureAuth() {
-  if (state.demo || hasToken()) return;
+  if (state.demo || state.ketua || hasToken()) return;
   await reconnect();
 }
 
@@ -234,7 +254,10 @@ function showLogin(error = '') {
   btn.addEventListener('click', async () => {
     err.textContent = '';
     if (needSheet) {
-      const id = parseSheetId(app.querySelector('#sheet-url').value);
+      const teks = app.querySelector('#sheet-url').value;
+      const k = parseKetua(teks);
+      if (k) { busy(btn, true, 'Memuatkan data…'); mulaKetua(k); return; }
+      const id = parseSheetId(teks);
       if (!id) { err.textContent = 'Pautan Google Sheet tidak sah. Salin pautan penuh dari bar alamat Sheet.'; return; }
       state.sheetId = id;
       try { localStorage.setItem('amp-sheet', id); } catch {}
@@ -273,6 +296,45 @@ function switchSheet() {
   showLogin();
 }
 
+// Keluar dari paparan ketua, kembali ke log masuk admin dan focal person.
+function keluarKetua(mesej = '') {
+  buangKetua();
+  state.ketua = null;
+  state.user = null;
+  state.sheetTitle = '';
+  try { state.sheetId = localStorage.getItem('amp-sheet') || ''; } catch { state.sheetId = ''; }
+  history.replaceState(null, '', location.pathname + location.search + '#/utama');
+  showLogin(mesej);
+}
+
+// Paparan ketua: lihat sahaja, tanpa log masuk Google.
+async function mulaKetua(k) {
+  simpanKetua(k);
+  state.ketua = k;
+  state.sheetId = 'ketua';
+  // iPhone: tanpa manifest, ikon di skrin utama menyimpan alamat semasa (pautan ketua), bukan start_url biasa.
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) document.querySelectorAll('link[rel="manifest"]').forEach((x) => x.remove());
+  const had = loadCache();
+  if (had) start();
+  try {
+    await load();
+    if (had) route(true); else start();
+  } catch (e) {
+    if (e instanceof PautanError) { keluarKetua(e.message); return; }
+    if (had) toast(e.offline ? 'Luar talian. Memaparkan data simpanan.' : friendly(e), e.offline ? '' : 'err');
+    else showKetuaGagal(friendly(e), k);
+  }
+}
+
+function showKetuaGagal(mesej, k) {
+  started = false;
+  nav.hidden = true;
+  freshApp();
+  app.innerHTML = `<div class="page"><div class="empty"><div class="empty-t">Data belum dapat dimuatkan</div><div class="sub">${mesej}</div>
+    <button type="button" class="btn primary" id="k-cuba">Cuba lagi</button></div></div>`;
+  app.querySelector('#k-cuba').addEventListener('click', (e) => { busy(e.currentTarget, true, 'Memuatkan…'); mulaKetua(k); });
+}
+
 async function boot() {
   if ('serviceWorker' in navigator && !DEMO) navigator.serviceWorker.register('sw.js').catch(() => {});
   const params = new URLSearchParams(location.search);
@@ -284,6 +346,8 @@ async function boot() {
     const qs = params.toString();
     history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
   }
+  const ketua = parseKetua(location.hash) || ketuaTersimpan();
+  if (ketua) { await mulaKetua(ketua); return; }
   state.demo = DEMO;
   if (DEMO) {
     state.sheetId = 'demo';

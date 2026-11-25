@@ -3,6 +3,7 @@
 // jadi pengguna diminta buka pautan dalam Chrome (Android) atau Safari (iPhone).
 import { I } from './icons.js';
 import { esc } from './util.js';
+import { ketuaTersimpan, pautanKetua } from './ketua.js';
 
 const ua = navigator.userAgent || '';
 export const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -14,6 +15,8 @@ const samsung = /SamsungBrowser/i.test(ua);
 export const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 
 export function appLink() {
+  const k = ketuaTersimpan();
+  if (k) return pautanKetua(k);
   let sheet = '';
   try { sheet = localStorage.getItem('amp-sheet') || ''; } catch {}
   const base = location.origin + location.pathname;
@@ -21,6 +24,7 @@ export function appLink() {
 }
 
 export function sheetLink() {
+  if (ketuaTersimpan()) return '';
   let sheet = '';
   try { sheet = localStorage.getItem('amp-sheet') || ''; } catch {}
   return sheet ? `https://docs.google.com/spreadsheets/d/${sheet}/edit` : '';
@@ -54,7 +58,8 @@ export function installCard({ title = true } = {}) {
       <p class="hint">Tiada pilihan Add to Home Screen? Pautan mungkin dibuka dari app lain (WhatsApp, Claude). Tekan ikon kompas atau <b>Open in Safari</b> dahulu.</p>`;
     }
   } else if (isAndroid) {
-    const open = `<a class="btn primary sm" href="${esc(chromeIntent())}">${I.ext}Buka dalam Chrome</a>`;
+    // Pautan intent tidak boleh membawa bahagian selepas #, jadi pautan ketua hanya boleh disalin.
+    const open = ketuaTersimpan() ? '' : `<a class="btn primary sm" href="${esc(chromeIntent())}">${I.ext}Buka dalam Chrome</a>`;
     if (inApp) {
       body = `<p class="sub2">Pautan ini dibuka dalam browser app lain, yang tidak boleh memasang app. Buka dalam Chrome dahulu.</p>
         <div class="row-btns">${open}${copyBtn}</div>`;

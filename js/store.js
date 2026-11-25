@@ -5,6 +5,7 @@ import {
   toDate, numOrNull, str, today, addDays, addMonths, diffDays, fmtLong, dayName, norm, isoDate, toNum, driveId,
 } from './util.js';
 import { permitNumbers } from './imbas.js';
+import { ambilDataKetua } from './ketua.js';
 
 const DAFTAR = 'DAFTAR';
 const TETAPAN = 'TETAPAN';
@@ -18,6 +19,7 @@ export const state = {
   user: null,
   ownerEmail: '',
   role: 'LIHAT',
+  ketua: null,
   cols: {},
   tcols: {},
   scols: {},
@@ -272,6 +274,7 @@ export const isRekod = (j) => (jenisInfo(j) || {}).asasKadar === 'REKOD';
 
 function resolveRole(email) {
   const e = String(email || '').toLowerCase();
+  if (state.ketua) return 'KETUA';
   if (state.demo) return 'ADMIN';
   if (state.ownerEmail && e === state.ownerEmail.toLowerCase()) return 'ADMIN';
   const u = state.tetapan.users.find((x) => x.email === e);
@@ -279,7 +282,7 @@ function resolveRole(email) {
   return state.tetapan.users.length ? 'LIHAT' : 'ADMIN';
 }
 
-export const canEdit = () => state.role === 'ADMIN' || state.role === 'FOCAL PERSON';
+export const canEdit = () => !state.ketua && (state.role === 'ADMIN' || state.role === 'FOCAL PERSON');
 
 // ---------- Muat data ----------
 
@@ -314,7 +317,17 @@ export function loadCache() {
   }
 }
 
+// Pautan ketua: data lihat sahaja dari skrip Google. Surat tidak dihantar.
+async function loadKetua() {
+  const j = await ambilDataKetua(state.ketua);
+  const raw = { d: j.d, t: j.t, s: [], user: { email: '', name: 'Ketua Jabatan', photo: '' }, ownerEmail: '', title: j.title || '', loadedAt: Date.now() };
+  applyRaw(raw);
+  state.offline = false;
+  saveCache(raw);
+}
+
 export async function load() {
+  if (state.ketua) return loadKetua();
   if (state.demo) return loadDemo();
   const id = state.sheetId;
   const meta = await sheets.meta(id);
@@ -661,10 +674,17 @@ async function saveSetting(keyword, value) {
   const k = norm(keyword);
   const s = state.tetapan.settings.find((x) => norm(x.label).includes(k));
   if (!s || state.tcols.nilai == null) return;
+  if (!state.demo) await sheets.batchValues(state.sheetId, [{ range: `${TETAPAN}!${colLetter(state.tcols.nilai)}${s.row}`, values: [[value]] }]);
   s.value = value;
-  if (state.demo) return;
-  await sheets.batchValues(state.sheetId, [{ range: `${TETAPAN}!${colLetter(state.tcols.nilai)}${s.row}`, values: [[value]] }]);
 }
+
+// Pautan ketua: ID skrip dan kunci ada dalam TETAPAN. Kunci kosong bermaksud pautan dimatikan.
+export function tetapanKetua() {
+  const ada = state.tetapan.settings.some((x) => norm(x.label).includes('kuncipautanketua'));
+  return { ada, skrip: str(setting('skrip pautan ketua')), kunci: str(setting('kunci pautan ketua')) };
+}
+
+export const tetapKunciKetua = (kunci) => saveSetting('kunci pautan ketua', kunci);
 
 async function folder(keyword, name) {
   let id = str(setting(keyword));

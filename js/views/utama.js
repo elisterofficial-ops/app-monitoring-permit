@@ -58,7 +58,7 @@ export default {
     const due = suratDue().length + suratTamat().length;
     const up = suratUpcoming();
     let banner = '';
-    if (up.length) {
+    if (up.length && !state.ketua) {
       const d0 = up[0].tarikhSurat;
       const group = up.filter((x) => +x.tarikhSurat === +d0);
       const tamat = group[0].r.tamat;
@@ -73,7 +73,7 @@ export default {
           <span><span class="sub">${esc(`${dayName(today())}, ${fmtLong(today())}`)}</span>
           <span class="hello">${esc(greet())}${first ? `, ${esc(first)}` : ''}</span></span>
         </a>
-        <a class="icon-btn" href="#/surat" aria-label="Surat perlu dijana: ${due}">${I.bell}${due ? '<span class="dot"></span>' : ''}</a>
+        ${state.ketua ? '' : `<a class="icon-btn" href="#/surat" aria-label="Surat perlu dijana: ${due}">${I.bell}${due ? '<span class="dot"></span>' : ''}</a>`}
       </div>
 
       ${installBanner()}
@@ -96,7 +96,9 @@ export default {
         <a href="#/cari"><span class="q-ic">${I.search}</span>Cari</a>
         ${edit ? `<a href="#/tambah"><span class="q-ic">${I.plus}</span>Tambah</a>
         <a href="#/ulang"><span class="q-ic v">${I.copy}</span>Ulang</a>` : `<a href="#/hasil"><span class="q-ic">${I.chart}</span>Hasil</a>`}
-        <a href="#/surat" class="q-badge-wrap"><span class="q-ic v">${I.mail}</span>Surat${due ? `<span class="q-badge">${due}</span>` : ''}</a>
+        ${state.ketua ? `<a href="#/cari?status=perhatian"><span class="q-ic v">${I.alert}</span>Perhatian</a>
+        <a href="#/profil"><span class="q-ic v">${I.user}</span>Profil</a>`
+    : `<a href="#/surat" class="q-badge-wrap"><span class="q-ic v">${I.mail}</span>Surat${due ? `<span class="q-badge">${due}</span>` : ''}</a>`}
       </div>
 
       <section class="card">

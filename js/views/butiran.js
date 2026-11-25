@@ -83,7 +83,7 @@ export default {
     const jumlah = r.jumlah != null ? `<b class="mono">${esc(fmtRM(r.jumlah))}</b>` : `<span class="muted">Kadar ${esc(scase(r.jenis))} belum ditetapkan</span>`;
     const actions = [];
     if (edit && r.tempoh !== 'SEKALI BAYAR' && r.status !== 'REKOD') actions.push(`<a class="act primary" href="#/baharui/${encodeURIComponent(r.id)}">${I.renew}Baharui</a>`);
-    if (r.tempoh === 'TAHUNAN' && r.status !== 'REKOD') actions.push(`<a class="act violet" href="#/surat?id=${encodeURIComponent(r.id)}">${I.mail}Surat</a>`);
+    if (!state.ketua && r.tempoh === 'TAHUNAN' && r.status !== 'REKOD') actions.push(`<a class="act violet" href="#/surat?id=${encodeURIComponent(r.id)}">${I.mail}Surat</a>`);
     actions.push(`<a class="act green" href="https://wa.me/${waNumber(r.telefon)}?text=${encodeURIComponent(waText(r))}" target="_blank" rel="noopener">${I.wa}WhatsApp</a>`);
     if (r.koordinat) actions.push(`<a class="act" href="${esc(mapsUrl(r.koordinat))}" target="_blank" rel="noopener">${I.pin}Peta</a>`);
     else if (edit) actions.push(`<button type="button" class="act" data-act="lokasi">${I.locate}Tanda lokasi</button>`);
@@ -107,7 +107,7 @@ export default {
         ${row('Jumlah dibayar', bayar)}
         ${r.resit ? row('No. resit', esc(r.resit)) : ''}
         ${row('Jumlah keseluruhan', jumlah)}
-        ${row('Pengurus premis', r.pengurus ? esc(r.pengurus) : '<span class="muted">-</span>')}
+        ${state.ketua ? '' : row('Pengurus premis', r.pengurus ? esc(r.pengurus) : '<span class="muted">-</span>')}
         ${r.alamat ? row('Alamat', esc(r.alamat).replace(/\n/g, '<br>')) : ''}
         ${r.telefon ? row('No. telefon', `<a href="tel:${esc(r.telefon.replace(/\s/g, ''))}">${esc(r.telefon)}</a>`) : ''}
         ${r.koordinat ? row('Koordinat', `<a href="${esc(mapsUrl(r.koordinat))}" target="_blank" rel="noopener">${esc(r.koordinat)}</a>`) : ''}
