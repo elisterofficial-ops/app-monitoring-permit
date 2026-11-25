@@ -1,7 +1,8 @@
 import { I } from '../icons.js';
 import { esc, timeAgo, tcase } from '../util.js';
 import { CONFIG } from '../config.js';
-import { state, tetapanKetua, tetapKunciKetua } from '../store.js';
+import { state, tetapanKetua, kunciSegar, segarKunci, hidupkanKunci, tukarKunci } from '../store.js';
+import { hasToken } from '../google.js';
 import { header, initials, busy, toast, openSheet } from '../ui.js';
 import { installCard } from '../install.js';
 import { kunciBaharu, pautanKetua } from '../ketua.js';
@@ -48,24 +49,46 @@ async function salin(teks) {
   } catch { window.prompt('Salin pautan ini:', teks); }
 }
 
-async function urusKetua(b, ctx) {
-  const k = tetapanKetua();
-  const act = b.dataset.k;
-  const link = pautanKetua(k);
-  if (act === 'salin') return salin(link);
-  if (act === 'kongsi') {
-    if (navigator.share) {
-      try { await navigator.share({ title: 'APP Monitoring Permit', text: 'APP Monitoring Permit (lihat sahaja, tanpa log masuk):', url: link }); } catch {}
-      return undefined;
-    }
-    return salin(link);
+// Semak kunci terkini dalam Sheet dahulu, supaya pautan yang sudah mati tidak dikongsi.
+async function kongsi(b, ctx, act) {
+  const lama = tetapanKetua().kunci;
+  let k = tetapanKetua();
+  if (!kunciSegar()) {
+    busy(b, true, 'Menyemak…');
+    try { k = await ctx.withAuth(segarKunci); } catch (err) { busy(b, false); ctx.fail(err); return; }
+    busy(b, false);
+    if (k.kunci !== lama) ctx.rerender();
+    if (!k.kunci) { toast('Pautan ini sudah dimatikan.', 'err'); return; }
   }
+  const link = pautanKetua(k);
+  if (act === 'kongsi' && navigator.share) {
+    try {
+      await navigator.share({ title: 'APP Monitoring Permit', text: 'APP Monitoring Permit (lihat sahaja, tanpa log masuk):', url: link });
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+  await salin(link);
+}
+
+async function urusKetua(b, ctx) {
+  const act = b.dataset.k;
+  if (act === 'salin' || act === 'kongsi') return kongsi(b, ctx, act);
   if (act === 'tukar' && !(await sahkan('Tukar pautan?', 'Pautan lama terus berhenti berfungsi. Hantar pautan baharu kepada semua yang menggunakannya.', 'Tukar pautan'))) return undefined;
   if (act === 'mati' && !(await sahkan('Matikan pautan?', 'Sesiapa yang guna pautan ini tidak lagi dapat melihat data.', 'Matikan'))) return undefined;
   busy(b, true, 'Menyimpan…');
   try {
-    await ctx.withAuth(() => tetapKunciKetua(act === 'mati' ? '' : kunciBaharu()));
-    toast(act === 'mati' ? 'Pautan dimatikan.' : 'Pautan sedia untuk dikongsi.', 'ok');
+    let mesej = 'Pautan sedia untuk dikongsi.';
+    if (act === 'baharu') {
+      const baharu = await ctx.withAuth(() => hidupkanKunci(kunciBaharu));
+      if (!baharu) mesej = 'Pautan sudah dihidupkan sebelum ini. Pautan yang sama dikekalkan.';
+    } else {
+      const kunci = act === 'mati' ? '' : kunciBaharu();
+      await ctx.withAuth(() => tukarKunci(kunci));
+      if (act === 'mati') mesej = 'Pautan dimatikan.';
+    }
+    toast(mesej, 'ok');
     ctx.rerender();
   } catch (err) { busy(b, false); ctx.fail(err); }
   return undefined;
@@ -119,6 +142,14 @@ export default {
     el.querySelector('#logout').addEventListener('click', () => ctx.logout());
     el.querySelector('#switch').addEventListener('click', () => ctx.switchSheet());
     const kad = el.querySelector('#kad-ketua');
-    if (kad) kad.addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) urusKetua(b, ctx); });
+    if (!kad) return;
+    kad.addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) urusKetua(b, ctx); });
+    // Tunjuk keadaan pautan terkini tanpa menunggu muat semula.
+    if (hasToken() && !kunciSegar()) {
+      const lama = tetapanKetua().kunci;
+      segarKunci().then((k) => {
+        if (k.kunci !== lama && document.contains(kad) && !kad.querySelector('[data-k]:disabled')) ctx.rerender();
+      }).catch(() => {});
+    }
   },
 };

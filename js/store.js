@@ -684,7 +684,44 @@ export function tetapanKetua() {
   return { ada, skrip: str(setting('skrip pautan ketua')), kunci: str(setting('kunci pautan ketua')) };
 }
 
-export const tetapKunciKetua = (kunci) => saveSetting('kunci pautan ketua', kunci);
+// Baca semula TETAPAN sahaja. Pautan mungkin dihidupkan atau ditukar dari telefon lain, jadi kunci dalam ingatan boleh jadi lama.
+let kunciDibaca = 0;
+export const kunciSegar = () => state.demo || Date.now() - kunciDibaca < 60000;
+
+export async function segarKunci() {
+  if (!state.demo) {
+    const res = await sheets.batchGet(state.sheetId, [`${TETAPAN}!A1:Z`]);
+    const t = (res.valueRanges && res.valueRanges[0] && res.valueRanges[0].values) || [];
+    if (!t.length) throw new Error('Tab TETAPAN tidak dapat dibaca. Cuba lagi.');
+    parseTetapan(t);
+    try {
+      const raw = JSON.parse(localStorage.getItem(cacheKey()) || 'null');
+      if (raw) saveCache({ ...raw, t });
+    } catch {}
+  }
+  kunciDibaca = Date.now();
+  return tetapanKetua();
+}
+
+async function tulisKunci(kunci) {
+  if (!tetapanKetua().ada) throw new Error('Baris "Kunci pautan ketua" tiada dalam TETAPAN.');
+  await saveSetting('kunci pautan ketua', kunci);
+  const k = await segarKunci();
+  if (k.kunci !== kunci) throw new Error('Pautan tidak dapat disimpan. Cuba lagi.');
+}
+
+// Hidupkan: guna kunci yang sudah ada dalam Sheet. Kunci baharu dibuat hanya jika sel itu kosong.
+export async function hidupkanKunci(buat) {
+  const k = await segarKunci();
+  if (k.kunci) return false;
+  await tulisKunci(buat());
+  return true;
+}
+
+export async function tukarKunci(kunci) {
+  await segarKunci();
+  await tulisKunci(kunci);
+}
 
 async function folder(keyword, name) {
   let id = str(setting(keyword));
